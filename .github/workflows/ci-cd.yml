@@ -30,28 +30,6 @@ jobs:
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-      - name: CREATE env file
-        run: |
-          cat > backend.env <<EOF
-          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
-          ENCRYPTION_SALT=${{ secrets.ENCRYPTION_SALT }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          MONGO_URI=${{ secrets.MONGO_URI }}
-          REDIS_HOST=${{ secrets.REDIS_HOST }}
-          REDIS_PORT=${{ secrets.REDIS_PORT }}
-          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
-          PORT=${{ secrets.PORT }}
-          WS_PORT=${{ secrets.WS_PORT }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          SESSION_STORE=${{ secrets.SESSION_STORE }}
-          EOF
-
-      - name: Copy env to Servers
-        run: |
-          for server in $(echo "${{ secrets.EC2_SERVERS }}" | jq -r '.[]'); do
-            echo "Copying env to $server"
-            scp -o StrictHostKeyChecking=no backend.env ubuntu@"$server":/home/ubuntu/backend.env
-          done
 
       - name: Deploy to Servers
         env:
@@ -71,8 +49,8 @@ jobs:
           SESSION_STORE: ${{ secrets.SESSION_STORE }}
         run: |
           set -e
-          for server in $(echo $SERVERS | jq -r '.[]'); do
-            echo "Deploying to $server..."
+          for server in $(echo "$SERVERS" | jq -r '.[]'); do
+            echo "Deploying to $server"
             ssh -o StrictHostKeyChecking=no ubuntu@"$server" bash -s <<EOF
               set -e
               sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
