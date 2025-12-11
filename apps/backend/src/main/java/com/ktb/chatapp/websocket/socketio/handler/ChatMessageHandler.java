@@ -20,6 +20,8 @@ import com.ktb.chatapp.service.SessionValidationResult;
 import com.ktb.chatapp.service.RateLimitService;
 import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
+import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
+import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -48,6 +50,7 @@ public class ChatMessageHandler {
     private final BannedWordChecker bannedWordChecker;
     private final RateLimitService rateLimitService;
     private final MeterRegistry meterRegistry;
+    private final BroadcastService broadcastService;
 
     @OnEvent(CHAT_MESSAGE)
     public void handleChatMessage(SocketIOClient client, ChatMessageRequest data) {
@@ -161,8 +164,13 @@ public class ChatMessageHandler {
 
             Message savedMessage = messageRepository.save(message);
 
-            socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(MESSAGE, createMessageResponse(savedMessage, sender));
+            // Redis Pub/Sub를 통해 모든 서버에 브로드캐스트
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_MESSAGE,
+                    roomId,
+                    MESSAGE,
+                    createMessageResponse(savedMessage, sender)
+            );
 
             // AI 멘션 처리
             aiService.handleAIMentions(roomId, socketUser.id(), messageContent);

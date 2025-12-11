@@ -32,7 +32,7 @@ public class SocketIOConfig {
     @Value("${socketio.server.port:5002}")
     private Integer port;
 
-    @Bean(initMethod = "start", destroyMethod = "stop")
+    @Bean(destroyMethod = "stop")
     public SocketIOServer socketIOServer(AuthTokenListener authTokenListener) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
@@ -77,10 +77,10 @@ public class SocketIOConfig {
         return new SpringAnnotationScanner(socketIOServer);
     }
 
-    // 인메모리 저장소, 단일 노드 환경에서만 사용
+    // 인메모리 저장소, 단일 노드 환경에서만 사용 (chat.datastore.type=local 일 때만 활성화)
     @Bean
-    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
-    public ChatDataStore chatDataStore() {
+    @ConditionalOnProperty(name = "chat.datastore.type", havingValue = "local")
+    public ChatDataStore localChatDataStore() {
         return new LocalChatDataStore();
     }
 }

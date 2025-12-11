@@ -15,6 +15,8 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
+import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
+import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,7 @@ public class RoomJoinHandler {
     private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
+    private final BroadcastService broadcastService;
     
     @OnEvent(JOIN_ROOM)
     public void handleJoinRoom(SocketIOClient client, String roomId) {
@@ -123,13 +126,21 @@ public class RoomJoinHandler {
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
 
-            // 입장 메시지 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(joinMessage, null));
+            // 입장 메시지 브로드캐스트 (Redis Pub/Sub)
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_SYSTEM_MESSAGE,
+                    roomId,
+                    MESSAGE,
+                    messageResponseMapper.mapToMessageResponse(joinMessage, null)
+            );
 
-            // 참가자 목록 업데이트 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participants);
+            // 참가자 목록 업데이트 브로드캐스트 (Redis Pub/Sub)
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_PARTICIPANTS_UPDATE,
+                    roomId,
+                    PARTICIPANTS_UPDATE,
+                    participants
+            );
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
                 userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());

@@ -8,6 +8,8 @@ import com.ktb.chatapp.dto.MessageReactionResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
+import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
+import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +27,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class MessageReactionHandler {
-    
+
     private final SocketIOServer socketIOServer;
     private final MessageRepository messageRepository;
+    private final BroadcastService broadcastService;
     
     @OnEvent(MESSAGE_REACTION)
     public void handleMessageReaction(SocketIOClient client, MessageReactionRequest data) {
@@ -63,8 +66,13 @@ public class MessageReactionHandler {
                 message.getReactions()
             );
 
-            socketIOServer.getRoomOperations(message.getRoomId())
-                .sendEvent(MESSAGE_REACTION_UPDATE, response);
+            // Redis Pub/Sub를 통해 리액션 업데이트 브로드캐스트
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_REACTION_UPDATE,
+                    message.getRoomId(),
+                    MESSAGE_REACTION_UPDATE,
+                    response
+            );
 
         } catch (Exception e) {
             log.error("Error handling messageReaction", e);

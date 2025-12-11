@@ -13,6 +13,8 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
+import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
+import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,12 +32,13 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class MessageReadHandler {
-    
+
     private final SocketIOServer socketIOServer;
     private final MessageReadStatusService messageReadStatusService;
     private final MessageRepository messageRepository;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
+    private final BroadcastService broadcastService;
     
     @OnEvent(MARK_MESSAGES_AS_READ)
     public void handleMarkAsRead(SocketIOClient client, MarkAsReadRequest data) {
@@ -74,9 +77,13 @@ public class MessageReadHandler {
 
             MessagesReadResponse response = new MessagesReadResponse(userId, data.getMessageIds());
 
-            // Broadcast to room
-            socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(MESSAGES_READ, response);
+            // Redis Pub/Sub를 통해 읽음 상태 브로드캐스트
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_MESSAGES_READ,
+                    roomId,
+                    MESSAGES_READ,
+                    response
+            );
 
         } catch (Exception e) {
             log.error("Error handling markMessagesAsRead", e);

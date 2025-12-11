@@ -14,6 +14,8 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
+import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
+import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,6 +44,7 @@ public class RoomLeaveHandler {
     private final UserRepository userRepository;
     private final UserRooms userRooms;
     private final MessageResponseMapper messageResponseMapper;
+    private final BroadcastService broadcastService;
     
     @OnEvent(LEAVE_ROOM)
     public void handleLeaveRoom(SocketIOClient client, String roomId) {
@@ -78,11 +81,14 @@ public class RoomLeaveHandler {
             
             sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
             broadcastParticipantList(roomId);
-            socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(USER_LEFT, Map.of(
-                            "userId", userId,
-                            "userName", userName
-                    ));
+
+            // Redis Pub/Sub를 통해 모든 서버에 USER_LEFT 브로드캐스트
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_USER_LEFT,
+                    roomId,
+                    USER_LEFT,
+                    Map.of("userId", userId, "userName", userName)
+            );
             
         } catch (Exception e) {
             log.error("Error handling leaveRoom", e);
@@ -106,8 +112,13 @@ public class RoomLeaveHandler {
             Message savedMessage = messageRepository.save(systemMessage);
             MessageResponse response = messageResponseMapper.mapToMessageResponse(savedMessage, null);
 
-            socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(MESSAGE, response);
+            // Redis Pub/Sub를 통해 시스템 메시지 브로드캐스트
+            broadcastService.broadcastToRoom(
+                    ChatBroadcastEvent.TYPE_SYSTEM_MESSAGE,
+                    roomId,
+                    MESSAGE,
+                    response
+            );
 
         } catch (Exception e) {
             log.error("Error sending system message", e);
@@ -132,9 +143,14 @@ public class RoomLeaveHandler {
         if (participantList.isEmpty()) {
             return;
         }
-        
-        socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participantList);
+
+        // Redis Pub/Sub를 통해 참가자 목록 업데이트 브로드캐스트
+        broadcastService.broadcastToRoom(
+                ChatBroadcastEvent.TYPE_PARTICIPANTS_UPDATE,
+                roomId,
+                PARTICIPANTS_UPDATE,
+                participantList
+        );
     }
 
     private SocketUser getUserDto(SocketIOClient client) {
