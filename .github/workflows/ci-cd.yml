@@ -37,7 +37,6 @@ jobs:
         env:
           SERVERS: ${{ secrets.EC2_SERVERS }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           ENCRYPTION_SALT: ${{ secrets.ENCRYPTION_SALT }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -54,31 +53,28 @@ jobs:
           for server in $(echo "$SERVERS" | jq -r '.[]'); do
             echo "Deploying to $server"
             ssh -o StrictHostKeyChecking=no ubuntu@"$server" bash -s <<EOF
-              set -e
-
-              sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
-              sudo docker stop backend-container || true
-              sudo docker rm backend-container || true
-
-              sudo docker run -d \
-                --name backend-container \
-                -e ENCRYPTION_KEY=${ENCRYPTION_KEY} \
-                -e ENCRYPTION_SALT=${ENCRYPTION_SALT} \
-                -e JWT_SECRET=${JWT_SECRET} \
-                -e MONGO_URI=${MONGO_URI} \
-                -e REDIS_HOST=${REDIS_HOST} \
-                -e REDIS_PORT=${REDIS_PORT} \
-                -e REDIS_PASSWORD=${REDIS_PASSWORD} \
-                -e PORT=${PORT} \
-                -e WS_PORT=${WS_PORT} \
-                -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-                -e SESSION_STORE=${SESSION_STORE} \
-                -p ${PORT}:${PORT} \
-                -p ${WS_PORT}:${WS_PORT} \
-                ${DOCKER_USERNAME}/backend-app:latest
-
+          set -e
+          sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
+          sudo docker stop backend-container || true
+          sudo docker rm backend-container || true
+          sudo docker run -d \
+            --name backend-container \
+            -e ENCRYPTION_KEY=${ENCRYPTION_KEY} \
+            -e ENCRYPTION_SALT=${ENCRYPTION_SALT} \
+            -e JWT_SECRET=${JWT_SECRET} \
+            -e MONGO_URI=${MONGO_URI} \
+            -e REDIS_HOST=${REDIS_HOST} \
+            -e REDIS_PORT=${REDIS_PORT} \
+            -e REDIS_PASSWORD=${REDIS_PASSWORD} \
+            -e PORT=${PORT} \
+            -e WS_PORT=${WS_PORT} \
+            -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+            -e SESSION_STORE=${SESSION_STORE} \
+            -p ${PORT}:${PORT} \
+            -p ${WS_PORT}:${WS_PORT} \
+            ${DOCKER_USERNAME}/backend-app:latest
           EOF
-              done
+          done
 
       # - name: Health Check
       #   run: |
