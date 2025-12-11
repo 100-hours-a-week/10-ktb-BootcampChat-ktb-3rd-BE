@@ -37,7 +37,7 @@ public class OpenApiConfig {
                 .description("로컬 개발 서버");
 
         Server productionServer = new Server()
-                .url("https://api.ktb-chat.com")
+                .url("https://api.goorm-ktb-010.goorm.team")
                 .description("프로덕션 서버");
 
         // 보안 스키마 이름

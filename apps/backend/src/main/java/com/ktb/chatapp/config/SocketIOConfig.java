@@ -37,13 +37,13 @@ public class SocketIOConfig {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
         config.setPort(port);
-        
+
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
-        socketConfig.setTcpNoDelay(false);
-        socketConfig.setAcceptBackLog(10);
-        socketConfig.setTcpSendBufferSize(4096);
-        socketConfig.setTcpReceiveBufferSize(4096);
+        socketConfig.setAcceptBackLog(1024);
+        socketConfig.setTcpSendBufferSize(65536);
+        socketConfig.setTcpReceiveBufferSize(65536);
+        socketConfig.setTcpNoDelay(true);
         config.setSocketConfig(socketConfig);
 
         config.setOrigin("*");
@@ -57,13 +57,14 @@ public class SocketIOConfig {
         config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
 
         log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
-                 host, port, config.getBossThreads(), config.getWorkerThreads());
+                host, port, config.getBossThreads(), config.getWorkerThreads());
         var socketIOServer = new SocketIOServer(config);
+
         socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
-        
+
         return socketIOServer;
     }
-    
+
     /**
      * SpringAnnotationScanner는 BeanPostProcessor로서
      * ApplicationContext 초기화 초기에 등록되고,
@@ -75,7 +76,7 @@ public class SocketIOConfig {
     public BeanPostProcessor springAnnotationScanner(@Lazy SocketIOServer socketIOServer) {
         return new SpringAnnotationScanner(socketIOServer);
     }
-    
+
     // 인메모리 저장소, 단일 노드 환경에서만 사용
     @Bean
     @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)

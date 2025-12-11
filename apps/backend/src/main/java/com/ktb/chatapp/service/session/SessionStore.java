@@ -8,15 +8,15 @@ import java.util.Optional;
  * Provides operations for storing and retrieving session data.
  */
 public interface SessionStore {
-    
+
     /**
      * Find session by user ID
      *
      * @param userId the user identifier
      * @return Optional containing the Session if found, empty otherwise
      */
-    Optional<Session> findByUserId(String userId);
-    
+    Optional<Session> findBySessionId(String userId);
+
     /**
      * Save or update session
      *
@@ -24,13 +24,13 @@ public interface SessionStore {
      * @return the saved session
      */
     Session save(Session session);
-    
+
     /**
      * Delete all sessions for a user
      *
      * @param userId the user identifier
      */
     void deleteAll(String userId);
-    
+
     void delete(String userId, String sessionId);
 }

@@ -39,10 +39,10 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             String token = authToken.get("token") != null ? authToken.get("token").toString() : null;
             String sessionId = authToken.get("sessionId") != null ? authToken.get("sessionId").toString() : null;
 
+            log.info("HANDSHAKE => token={}, sessionId={}", token, sessionId);
+
             if (token == null || sessionId == null) {
-                log.warn("Missing authentication credentials in Socket.IO handshake - token: {}, sessionId: {}",
-                        token != null, sessionId != null);
-                return new AuthTokenResult(false, "Authentication error");
+                return new AuthTokenResult(false, Map.of("message", "Missing token or sessionId"));
             }
 
             String userId;
@@ -52,29 +52,29 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
                 return new AuthTokenResult(false, Map.of("message", "Invalid token"));
             }
 
-            // Validate session using SessionService
-            SessionValidationResult validationResult =
-                    sessionService.validateSession(userId, sessionId);
-
+            SessionValidationResult validationResult = sessionService.validateSession(userId, sessionId);
             if (!validationResult.isValid()) {
                 log.error("Session validation failed: {}", validationResult.getMessage());
                 return new AuthTokenResult(false, Map.of("message", "Invalid session"));
             }
 
-            // Load user from database
             User user = userRepository.findById(userId).orElse(null);
             if (user == null) {
                 log.error("User not found: {}", userId);
                 return new AuthTokenResult(false, Map.of("message", "User not found"));
             }
 
-            log.info("Socket.IO connection authorized for user: {} ({})", user.getName(), userId);
-            
-            var socketUser = new SocketUser(user.getId(), user.getName(), sessionId, client.getSessionId().toString());
+            var socketUser = new SocketUser(
+                    user.getId(),
+                    user.getName(),
+                    sessionId,
+                    client.getSessionId().toString()
+            );
             socketIOChatHandlerProvider.getObject().onConnect(client, socketUser);
+
             return AuthTokenResult.AuthTokenResultSuccess;
         } catch (Exception e) {
-            log.error("Socket.IO authentication error: {}", e.getMessage(), e);
+            log.error("Socket.IO authentication error", e);
             return new AuthTokenResult(false, Map.of("message", e.getMessage()));
         }
     }
