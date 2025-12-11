@@ -48,6 +48,7 @@ jobs:
           PORT: ${{ secrets.PORT }}
           WS_PORT: ${{ secrets.WS_PORT }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SESSION_STORE: ${{ secrets.SESSION_STORE }}
         run: |
           set -e
           for server in $(echo "$SERVERS" | jq -r '.[]'); do
@@ -71,6 +72,7 @@ jobs:
                 -e PORT="${PORT}" \
                 -e WS_PORT="${WS_PORT}" \
                 -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
+                -e SESSION_STORE="${SESSION_STORE}" \
                 -p 5001:5001 \
                 -p 5002:5002 \
                 ${DOCKER_USERNAME}/backend-app:latest
