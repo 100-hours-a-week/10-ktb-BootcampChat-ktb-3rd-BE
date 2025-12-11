@@ -3,7 +3,7 @@ name: BE CI/CD
 on:
   push:
     branches:
-      - "feature/ci-cd"
+      - "main"
 
 jobs:
   build-deploy:
