@@ -23,81 +23,55 @@ jobs:
         working-directory: ./apps/backend
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/backend-app:latest .
-
       - name: Push Docker image
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/backend-app:latest
-
       - name: Add SSH Key
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: Create env file
-        run: |
-          cat > backend.env <<EOF
-          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
-          ENCRYPTION_SALT=${{ secrets.ENCRYPTION_SALT }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          MONGO_URI=${{ secrets.MONGO_URI }}
-          REDIS_HOST=${{ secrets.REDIS_HOST }}
-          REDIS_PORT=${{ secrets.REDIS_PORT }}
-          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
-          PORT=${{ secrets.PORT }}
-          WS_PORT=${{ secrets.WS_PORT }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          SESSION_STORE=${{ secrets.SESSION_STORE }}
-          EOF
-
-      - name: Copy env to Servers
-        run: |
-          for server in $(echo "${{ secrets.EC2_SERVERS }}" | jq -r '.[]'); do
-            echo "Copying env to $server"
-            scp -o StrictHostKeyChecking=no backend.env ubuntu@"$server":/home/ubuntu/backend.env
-          done
-
       - name: Deploy to Servers
         env:
           SERVERS: ${{ secrets.EC2_SERVERS }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          ENCRYPTION_SALT: ${{ secrets.ENCRYPTION_SALT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          PORT: ${{ secrets.PORT }}
+          WS_PORT: ${{ secrets.WS_PORT }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SESSION_STORE: ${{ secrets.SESSION_STORE }}
         run: |
           set -e
           for server in $(echo "$SERVERS" | jq -r '.[]'); do
-            echo "Deploying to $server..."
+            echo "Deploying to $server"
             ssh -o StrictHostKeyChecking=no ubuntu@"$server" bash -s <<EOF
-          set -e
-          sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
-          sudo docker stop backend-app || true
-          sudo docker rm backend-app || true
-          sudo docker run -d \
-            --name backend-app \
-            --env-file /home/ubuntu/backend.env \
-            -p 5001:5001 \
-            -p 5002:5002 \
-            ${DOCKER_USERNAME}/backend-app:latest
-          rm -f /home/ubuntu/backend.env
+              set -e
+              sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
+              sudo docker stop backend-container || true
+              sudo docker rm backend-container || true
+
+              sudo docker run -d \
+                --name backend-container \
+                -e ENCRYPTION_KEY='${ENCRYPTION_KEY}' \
+                -e ENCRYPTION_SALT='${ENCRYPTION_SALT}' \
+                -e JWT_SECRET='${JWT_SECRET}' \
+                -e MONGO_URI='${MONGO_URI}' \
+                -e REDIS_HOST='${REDIS_HOST}' \
+                -e REDIS_PORT='${REDIS_PORT}' \
+                -e REDIS_PASSWORD='${REDIS_PASSWORD}' \
+                -e PORT='${PORT}' \
+                -e WS_PORT='${WS_PORT}' \
+                -e OPENAI_API_KEY='${OPENAI_API_KEY}' \
+                -e SESSION_STORE='${SESSION_STORE}' \
+                -p ${PORT}:${PORT} \
+                -p ${WS_PORT}:${WS_PORT} \
+                ${DOCKER_USERNAME}/backend-app:latest
           EOF
-          done
-
-      - name: Health Check
-        run: |
-          for server in $(echo '${{ secrets.EC2_SERVERS }}' | jq -r '.[]'); do
-            echo "Checking $server..."
-
-            for i in {1..30}; do
-              RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://$server:5001/api/health || echo "000")
-
-              if [ "$RESPONSE" -eq 200 ]; then
-                echo "Health check passed for $server"
-                break
-              fi
-
-              echo "Try $i/30 → $server not ready (code: $RESPONSE). Waiting..."
-              sleep 2
             done
-
-            if [ "$RESPONSE" -ne 200 ]; then
-              echo "Health check failed for $server"
-              exit 1
-            fi
-          done
