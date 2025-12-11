@@ -48,8 +48,8 @@ jobs:
               sudo docker run -d \
                 --name backend-container \
                 --env-file /home/ubuntu/.env \
-                -p ${PORT}:${PORT} \
-                -p ${WS_PORT}:${WS_PORT} \
+                -p 5001:5001 \
+                -p 5002:5002 \
                 ${DOCKER_USERNAME}/backend-app:latest
           EOF
             done
