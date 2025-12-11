@@ -51,7 +51,7 @@ jobs:
 
       - name: Copy env to Servers
         run: |
-          for server in $(echo '${{ secrets.EC2_SERVERS }}' | jq -r '.[]'); do
+          for server in $(echo "${{ secrets.EC2_SERVERS }}" | jq -r '.[]'); do
             echo "Copying env to $server"
             scp -o StrictHostKeyChecking=no backend.env ubuntu@"$server":/home/ubuntu/backend.env
           done
