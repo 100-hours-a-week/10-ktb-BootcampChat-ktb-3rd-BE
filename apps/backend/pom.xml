@@ -14,7 +14,7 @@
     <name>Chat App</name>
     <description>Chat App Backend</description>
     <properties>
-        <java.version>24</java.version>
+        <java.version>21</java.version>
         <netty.version>4.1.122.Final</netty.version>
         <spring-ai.version>1.0.3</spring-ai.version>
         <lombok.version>edge-SNAPSHOT</lombok.version>
