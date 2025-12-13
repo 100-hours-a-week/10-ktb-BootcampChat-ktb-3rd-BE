@@ -6,7 +6,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface FileService {
 
-    FileUploadResult uploadFile(MultipartFile file, String uploaderId);
+//    FileUploadResult uploadFile(MultipartFile file, String uploaderId);
     FileUploadResult uploadFile(FileMetadataRequest file, String uploaderId);
 
     String storeFile(MultipartFile file, String subDirectory);
