@@ -79,11 +79,11 @@ public class SessionService {
                 return SessionValidationResult.invalid("INVALID_PARAMETERS", "유효하지 않은 세션 파라미터");
             }
 
-            log.info("validateSession latency test start");
+            log.debug("validateSession latency test start");
             long t1 = System.currentTimeMillis();
             Session session = sessionStore.findBySessionId(sessionId).orElse(null);
 //            Session session = sessionStore.findByUserId(userId).orElse(null);
-            log.info("validateSession findByUserId: {}ms", System.currentTimeMillis() - t1);
+            log.debug("validateSession findByUserId: {}ms", System.currentTimeMillis() - t1);
 
             if (session == null) {
                 log.warn("No session found for userId: {}", userId);
