@@ -216,7 +216,9 @@ public class ChatMessageHandler {
         metadata.put("filename", fileData.get("filename"));
         metadata.put("originalname", fileData.get("originalname"));
         metadata.put("fileType", fileData.get("mimeType"));
-        metadata.put("fileSize", fileData.get("fileSize"));
+        // size 또는 fileSize 둘 다 지원
+        Object fileSize = fileData.get("fileSize") != null ? fileData.get("fileSize") : fileData.get("size");
+        metadata.put("fileSize", fileSize);
 
         message.setMetadata(metadata);
         log.info(message.getContent());

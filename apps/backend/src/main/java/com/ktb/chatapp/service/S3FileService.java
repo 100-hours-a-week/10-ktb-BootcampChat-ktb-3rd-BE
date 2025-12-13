@@ -76,6 +76,7 @@ public class S3FileService {
                 .url(url)
                 .accessUrl(accessUrl)
                 .expiresIn(PRESIGNED_URL_EXPIRATION_MINUTES * 60)
+                .file(savedFile)
                 .build();
     }
 
