@@ -39,12 +39,23 @@ export const useFileHandling = (socketRef, currentUser, router, handleSessionErr
         throw new Error(uploadResponse.message || '파일 업로드에 실패했습니다.');
       }
 
+      /**
+       * Ellim: uploadedFile 데이터 구조 수정 반영
+       * accessUrl을 포함한 새로운 데이터 구조에 맞게 수정
+       */
+      // 기존 코드 주석 처리
+      // const fileData = {
+      //   _id: uploadResponse.data.file._id,
+      //   filename: uploadResponse.data.file.filename,
+      //   originalname: uploadResponse.data.file.originalname,
+      //   mimetype: uploadResponse.data.file.mimetype,
+      //   size: uploadResponse.data.file.size
+      // }
       const fileData = {
-        _id: uploadResponse.data.file._id,
-        filename: uploadResponse.data.file.filename,
-        originalname: uploadResponse.data.file.originalname,
-        mimetype: uploadResponse.data.file.mimetype,
-        size: uploadResponse.data.file.size
+        filename: uploadResponse.accessUrl,  // CloudFront URL
+        originalname: uploadResponse.file.originalName,
+        mimetype: uploadResponse.file.mimeType,
+        size: uploadResponse.file.size
       }
 
       await socketRef.current.emit('chatMessage', {

@@ -98,9 +98,20 @@ export const useMessageHandling = (socketRef, currentUser, router, handleSession
           throw new Error(uploadedFile.message || '파일 업로드에 실패했습니다.');
         }
 
+        /**
+         * Ellim: uploadedFile 데이터 구조 수정 반영
+         * accessUrl을 포함한 새로운 데이터 구조에 맞게 수정
+         */
+        // 기존 코드 주석 처리
+        // const uploadedFileData = {
+        //   _id: uploadedFile.file._id,
+        //   filename: uploadedFile.file.filename,
+        //   originalname: uploadedFile.file.originalName,
+        //   mimeType: uploadedFile.file.mimeType,
+        //   size: uploadedFile.file.size,
+        // }
         const uploadedFileData = {
-          _id: uploadedFile.file._id, 
-          filename: uploadedFile.file.filename,           
+          filename: uploadedFile.accessUrl,  // CloudFront URL
           originalname: uploadedFile.file.originalName,
           mimeType: uploadedFile.file.mimeType,
           size: uploadedFile.file.size,
