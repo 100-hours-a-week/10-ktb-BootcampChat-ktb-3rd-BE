@@ -51,11 +51,15 @@ const FileMessage = ({
 
   //그린: 수정 버전
   useEffect(() => {
-  
+
     if (!msg?.fileId) return;
-       
     console.log('메세지가 파일임을 확인', msg);
-    const url = `https://dypusta48vkr4.cloudfront.net/chat/${msg.fileId}`;
+    /**
+     * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+     * fileId 대신 metadata.filename 사용
+     */
+    // const url = `https://dypusta48vkr4.cloudfront.net/chat/${msg.fileId}`;
+    const url = msg.metadata?.filename;
     console.log('S3 이미지 경로: ', url);
     setPreviewUrl(url);
     console.debug('Preview URL generated:', {
@@ -193,9 +197,12 @@ const FileMessage = ({
       if (!user?.token || !user?.sessionId) {
         throw new Error('인증 정보가 없습니다.');
       }
-
-      const baseUrl = `https://dypusta48vkr4.cloudfront.net/chat/${msg.metadata.filename}`;
-    
+      /**
+       * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+       * fileId 대신 metadata.filename 사용
+       */
+      // const baseUrl = `https://dypusta48vkr4.cloudfront.net/chat/${msg.metadata.filename}`;
+      const baseUrl = msg.metadata.filename;
 
       const newWindow = window.open(baseUrl, '_blank');
       if (!newWindow) {
@@ -272,9 +279,14 @@ const FileMessage = ({
       if (!user?.token || !user?.sessionId) {
         throw new Error('인증 정보가 없습니다.');
       }
-
+      
+      /**
+       * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+       * fileId 대신 metadata.filename 사용
+       */
       //const previewUrl = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
-      const previewUrl = `https://dypusta48vkr4.cloudfront.net/chat/${msg.metadata.filename}`;
+      // const previewUrl = `https://dypusta48vkr4.cloudfront.net/chat/${msg.metadata.filename}`;
+      const previewUrl = msg.metadata.filename;
 
       return (
         <div className="bg-transparent-pattern">
@@ -313,15 +325,29 @@ const FileMessage = ({
   const renderFilePreview = () => {
     console.log('채팅 렌더링: ', msg);
     const mimetype = msg.file?.mimetype || '';
+    /**
+     * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+     * fileId 대신 metadata.originalname 사용
+     */
     // const originalname = getDecodedFilename(msg.file?.originalname || 'Unknown File');
-    const originalname = msg.metadata.originalName || 'Unknown File';
-    const size = fileService.formatFileSize(msg.metadata.fileSize || 0);
+    const originalname = msg.metadata?.originalname || 'Unknown File';
+
+    /**
+     * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+     * fileSize 대신 msg.file?.size 사용
+     */
+    console.log('파일 메타데이터: ', msg.metadata);
+    const size = fileService.formatFileSize(msg.metadata?.fileSize || msg.metadata.size || 0);
 
 
     const previewWrapperClass = "overflow-hidden";
-
+    
+    /**
+     * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+     * mimetype 대신 metadata.fileType 사용
+     */
     // if (mimetype.startsWith('image/')) {
-    if (msg.metadata.fileType.startsWith('image/')) {
+    if (msg.metadata?.fileType?.startsWith('image/')) {
       console.log('이미지 확인');
       return (
         <div className={previewWrapperClass}>

@@ -93,7 +93,12 @@ class FileService {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/files/upload`, {
         method: 'POST',
         headers: {
-         'Content-Type': 'application/json', 
+          'Content-Type': 'application/json', 
+          /**
+           * Ellim : JWT 토큰을 Authorization 헤더에 포함
+           * JWT 토큰을 포함하지 않아 401이 발생하는 것으로 추정되어서 토큰 추가
+           */
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(fileData),
       });
@@ -140,9 +145,14 @@ class FileService {
         };
       }
 
+      /**
+       * Ellim: CloudFront URL 반환 반영
+       * S3 URL이 아닌 CloudFront URL을 클라이언트에 반환
+       */
       return {
         success: true,
         file: fileData,
+        accessUrl: data?.accessUrl,  // CloudFront URL 추가
       };
 
     } 
@@ -166,9 +176,12 @@ class FileService {
   
   async downloadFile(filename, originalname, token, sessionId) {
     try {
-
-      console.log('파일네임: ', filename);
-      const fileUrl = `https://dypusta48vkr4.cloudfront.net/chat/${filename}`;
+      /**
+       * Ellim: S3 프리사인드 URL을 직접 사용하도록 수정
+       * 기존의 다운로드 엔드포인트를 사용하지 않고, S3 URL을 바로 사용
+       */
+      // const fileUrl = `https://dypusta48vkr4.cloudfront.net/chat/${filename}`;
+      const fileUrl = filename;
 
       // 굳이 axios 쓸 수도 있고, a태그 클릭으로 더 심플하게도 가능
       const response = await axios.get(fileUrl, {
