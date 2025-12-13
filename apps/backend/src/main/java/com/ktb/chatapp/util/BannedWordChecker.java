@@ -1,29 +1,39 @@
 package com.ktb.chatapp.util;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
-import org.springframework.util.Assert;
+
+import com.hankcs.algorithm.AhoCorasickDoubleArrayTrie;
 
 public class BannedWordChecker {
-    
-    private final Set<String> bannedWords;
-    
+
+    private final AhoCorasickDoubleArrayTrie<String> trie;
+
     public BannedWordChecker(Set<String> bannedWords) {
-        this.bannedWords =
-                bannedWords.stream()
-                        .filter(word -> word != null && !word.isBlank())
-                        .map(word -> word.toLowerCase(Locale.ROOT))
-                        .collect(Collectors.toUnmodifiableSet());
-        Assert.notEmpty(this.bannedWords, "Banned words set must not be empty");
+        if (bannedWords == null || bannedWords.isEmpty()) {
+            throw new IllegalArgumentException("Banned words must not be empty");
+        }
+
+        Map<String, String> dict = new HashMap<>();
+
+        for (String word : bannedWords) {
+            if (word == null || word.isBlank()) continue;
+            dict.put(word.toLowerCase(Locale.ROOT), word);
+        }
+
+        trie = new AhoCorasickDoubleArrayTrie<>();
+        trie.build(dict);
     }
-    
+
     public boolean containsBannedWord(String message) {
         if (message == null || message.isBlank()) {
             return false;
         }
-        
-        String normalizedMessage = message.toLowerCase(Locale.ROOT);
-        return bannedWords.stream().anyMatch(normalizedMessage::contains);
+
+        String normalized = message.toLowerCase(Locale.ROOT);
+
+        return !trie.parseText(normalized).isEmpty();
     }
 }
