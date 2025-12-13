@@ -114,16 +114,6 @@ export const useMessageHandling = (socketRef, currentUser, router, handleSession
           fileData: uploadedFileData,
         });
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/files/upload`, {
-        method: 'POST',
-        headers: {
-         'Content-Type': 'application/json', 
-        },
-        body: JSON.stringify(uploadedFileData),
-      });
-
-      console.log('추가 API 요청: ', response);
-
         setFilePreview(null);
         setMessage('');
         setUploading(false);

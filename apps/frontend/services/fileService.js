@@ -98,22 +98,28 @@ class FileService {
         body: JSON.stringify(fileData),
       });
 
-      //그린: 백엔드와 상의 필요
-      const uploadUrl = response.s3Url;
+      console.log('S3 URL 요청 응답: ', response);
+      if (!response.ok) throw new Error(`upload failed: ${response.status}`);
+
+      let data;
+      try {
+        data = await response.json();
+      }
+      catch(error) {
+        throw new Error('parsing data fail');
+      }
+
+      const url = data?.url;
 
       const source = CancelToken.source();
       this.activeUploads.set(file.name, source);
 
-      // token과 sessionId는 axios 인터셉터에서 자동으로 추가되므로
-      // 여기서는 명시적으로 전달하지 않아도 됩니다
       // 그린: s3에 파일 업로드
-      const uploadResponse = await axios.put(uploadUrl, file, {
+      const uploadResponse = await axios.put(url, file, {
         headers: {
           'Content-Type': file.type,
         },
         cancelToken: source.token,
-        //그린: 인증 여부 주석처리 안하면 axios error 발생 -> 원인? 모르겠음
-        //withCredentials: true,
         onUploadProgress: (progressEvent) => {
           if (onProgress) {
             const percentCompleted = Math.round(
@@ -124,15 +130,13 @@ class FileService {
         }
       });
 
-      console.log('이미지 post 결과: ',response);
-
-      this.activeUploads.delete(uuid);
+      console.log('이미지 post 결과: ',uploadResponse);
 
       //s3에 업로드를 실패한 경우
-      if (response.status < 200 || response.status >= 300) {
+      if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
         return {
           success: false,
-          message: response.data?.message || '파일 업로드에 실패했습니다.'
+          message: uploadResponse.data?.message || '파일 업로드에 실패했습니다.'
         };
       }
 
@@ -168,8 +172,8 @@ class FileService {
 
       // 굳이 axios 쓸 수도 있고, a태그 클릭으로 더 심플하게도 가능
       const response = await axios.get(fileUrl, {
-        responseType: 'blob',     // 실제 바이트 받기
-        withCredentials: false,   // ❗ S3에는 creds 필요 없음
+        responseType: 'blob',     
+        withCredentials: false,   
       });
 
       const blob = new Blob([response.data], {
@@ -179,7 +183,6 @@ class FileService {
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      //link.download = finalFilename;
       link.download = originalname || fileId;
       link.style.display = 'none';
       document.body.appendChild(link);
