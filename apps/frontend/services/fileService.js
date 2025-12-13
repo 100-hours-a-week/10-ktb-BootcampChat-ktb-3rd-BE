@@ -14,19 +14,20 @@ class FileService {
       image: {
         extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
         mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-        maxSize: 10 * 1024 * 1024,
+        maxSize: 10 * 1024 * 1024, //10MB
         name: '이미지'
       },
       document: {
         extensions: ['.pdf'],
         mimeTypes: ['application/pdf'],
-        maxSize: 20 * 1024 * 1024,
+        maxSize: 20 * 1024 * 1024, //20MB
         name: 'PDF 문서'
       }
     };
   }
 
   async validateFile(file) {
+
     if (!file) {
       const message = '파일이 선택되지 않았습니다.';
       Toast.error(message);
@@ -75,30 +76,44 @@ class FileService {
   }
 
   async uploadFile(file, onProgress, token, sessionId) {
+
     const validationResult = await this.validateFile(file);
     if (!validationResult.success) {
       return validationResult;
     }
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      
+      const fileData = {                          
+        originalName: file.name,
+        mimeType: file.type,
+        size: file.size,
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/files/upload`, {
+        method: 'POST',
+        headers: {
+         'Content-Type': 'application/json', 
+        },
+        body: JSON.stringify(fileData),
+      });
+
+      //그린: 백엔드와 상의 필요
+      const uploadUrl = response.s3Url;
 
       const source = CancelToken.source();
       this.activeUploads.set(file.name, source);
 
-      const uploadUrl = this.baseUrl ?
-        `${this.baseUrl}/api/files/upload` :
-        '/api/files/upload';
-
       // token과 sessionId는 axios 인터셉터에서 자동으로 추가되므로
       // 여기서는 명시적으로 전달하지 않아도 됩니다
-      const response = await axiosInstance.post(uploadUrl, formData, {
+      // 그린: s3에 파일 업로드
+      const uploadResponse = await axios.put(uploadUrl, file, {
         headers: {
-          'Content-Type': 'multipart/form-data'
+          'Content-Type': file.type,
         },
         cancelToken: source.token,
-        withCredentials: true,
+        //그린: 인증 여부 주석처리 안하면 axios error 발생 -> 원인? 모르겠음
+        //withCredentials: true,
         onUploadProgress: (progressEvent) => {
           if (onProgress) {
             const percentCompleted = Math.round(
@@ -109,28 +124,25 @@ class FileService {
         }
       });
 
-      this.activeUploads.delete(file.name);
+      console.log('이미지 post 결과: ',response);
 
-      if (!response.data || !response.data.success) {
+      this.activeUploads.delete(uuid);
+
+      //s3에 업로드를 실패한 경우
+      if (response.status < 200 || response.status >= 300) {
         return {
           success: false,
           message: response.data?.message || '파일 업로드에 실패했습니다.'
         };
       }
 
-      const fileData = response.data.file;
       return {
         success: true,
-        data: {
-          ...response.data,
-          file: {
-            ...fileData,
-            url: this.getFileUrl(fileData.filename, true)
-          }
-        }
+        file: fileData,
       };
 
-    } catch (error) {
+    } 
+    catch (error) {
       this.activeUploads.delete(file.name);
 
       if (isCancel(error)) {
@@ -147,69 +159,28 @@ class FileService {
       return this.handleUploadError(error);
     }
   }
+  
   async downloadFile(filename, originalname, token, sessionId) {
     try {
-      // 파일 존재 여부 먼저 확인
-      const downloadUrl = this.getFileUrl(filename, false);
-      // axios 인터셉터가 자동으로 인증 헤더를 추가합니다
-      const checkResponse = await axiosInstance.head(downloadUrl, {
-        validateStatus: status => status < 500,
-        withCredentials: true
+
+      console.log('파일네임: ', filename);
+      const fileUrl = `https://dypusta48vkr4.cloudfront.net/chat/${filename}`;
+
+      // 굳이 axios 쓸 수도 있고, a태그 클릭으로 더 심플하게도 가능
+      const response = await axios.get(fileUrl, {
+        responseType: 'blob',     // 실제 바이트 받기
+        withCredentials: false,   // ❗ S3에는 creds 필요 없음
       });
-
-      if (checkResponse.status === 404) {
-        return {
-          success: false,
-          message: '파일을 찾을 수 없습니다.'
-        };
-      }
-
-      if (checkResponse.status === 403) {
-        return {
-          success: false,
-          message: '파일에 접근할 권한이 없습니다.'
-        };
-      }
-
-      if (checkResponse.status !== 200) {
-        return {
-          success: false,
-          message: '파일 다운로드 준비 중 오류가 발생했습니다.'
-        };
-      }
-
-      // axios 인터셉터가 자동으로 인증 헤더를 추가합니다
-      const response = await axiosInstance({
-        method: 'GET',
-        url: downloadUrl,
-        responseType: 'blob',
-        timeout: 30000,
-        withCredentials: true
-      });
-
-      const contentType = response.headers['content-type'];
-      const contentDisposition = response.headers['content-disposition'];
-      let finalFilename = originalname;
-
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(
-          /filename\*=UTF-8''([^;]+)|filename="([^"]+)"|filename=([^;]+)/
-        );
-        if (filenameMatch) {
-          finalFilename = decodeURIComponent(
-            filenameMatch[1] || filenameMatch[2] || filenameMatch[3]
-          );
-        }
-      }
 
       const blob = new Blob([response.data], {
-        type: contentType || 'application/octet-stream'
+        type: response.headers['content-type'] || 'application/octet-stream',
       });
 
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = finalFilename;
+      //link.download = finalFilename;
+      link.download = originalname || fileId;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();

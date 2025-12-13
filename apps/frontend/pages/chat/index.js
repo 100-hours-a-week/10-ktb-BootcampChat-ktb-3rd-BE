@@ -541,6 +541,9 @@ function ChatRoomsComponent() {
   }, [currentUser]);
 
   const handleJoinRoom = async (roomId) => {
+
+    console.log('handleJoinRoom');
+
     if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
       setError({
         title: '채팅방 입장 실패',
@@ -549,6 +552,8 @@ function ChatRoomsComponent() {
       });
       return;
     }
+
+    //그린: 채팅방 비밀번호가 있는 경우 처리 로직 필요?? 아예 없는건가??
 
     setJoiningRoom(true);
 

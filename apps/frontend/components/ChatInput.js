@@ -47,7 +47,8 @@ const ChatInput = forwardRef(({
     if (!file) return;
 
     try {
-      await fileService.validateFile(file);
+      const { success } = await fileService.validateFile(file);
+      if(!success) return;
       
       const filePreview = {
         file,
@@ -328,7 +329,7 @@ const ChatInput = forwardRef(({
         default:
           return;
       }
-    } else if (e.key === 'Enter' && !e.shiftKey) {
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (message.trim() || files.length > 0) {
         handleSubmit(e);

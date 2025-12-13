@@ -53,7 +53,7 @@ function NewChatRoom() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.name.trim()) {
+    if (formData.name.trim().length < 2) {
       setError('채팅방 이름을 입력해주세요.');
       return;
     }
@@ -84,6 +84,8 @@ function NewChatRoom() {
           password: formData.hasPassword ? formData.password : undefined
         })
       });
+
+      console.log('채팅방 생성 오류: ', response);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -190,7 +192,8 @@ function NewChatRoom() {
           <Button
             type="submit"
             size="lg"
-            disabled={loading || !formData.name.trim() || (formData.hasPassword && !formData.password)}
+            //그린: 제목이 2자 미만이면 button disabled
+            disabled={loading || formData.name.trim().length < 2 || (formData.hasPassword && formData.password.trim().length < 4) ||  (formData.hasPassword && !formData.password)}
             data-testid="create-chat-room-button"
           >
             {loading ? '생성 중...' : '채팅방 만들기'}

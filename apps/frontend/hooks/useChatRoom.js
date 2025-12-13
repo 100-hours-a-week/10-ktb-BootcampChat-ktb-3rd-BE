@@ -247,6 +247,7 @@ export const useChatRoom = () => {
 
     // 메시지 이벤트
     socketRef.current.on('message', message => {
+      console.log('[WS message]', message);
       if (!message || !mountedRef.current || messageProcessingRef.current || !message._id) return;
       
       if (processedMessageIds.current.has(message._id)) {
@@ -504,9 +505,11 @@ export const useChatRoom = () => {
     removeFilePreview: removeFile
   } = useFileHandling(socketRef, currentUser, router);
 
-  // Enter key handler
+  //Enter key handler
   const handleKeyDown = useCallback((e) => {
+    console.log('keydown: ', e);
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.isComposing || composing || e.keyCode === 229) return;
       e.preventDefault();
       handleMessageSubmit(e);
     }

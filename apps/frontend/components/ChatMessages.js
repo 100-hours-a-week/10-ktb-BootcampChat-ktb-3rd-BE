@@ -69,7 +69,13 @@ const ChatMessages = ({
   const allMessages = useMemo(() => {
     if (!Array.isArray(messages)) return [];
 
-    return messages.sort((a, b) => {
+    // return messages.sort((a, b) => {
+    //   if (!a?.timestamp || !b?.timestamp) return 0;
+    //   return new Date(a.timestamp) - new Date(b.timestamp);
+    // });
+    const copied = [...messages];
+
+    return copied.sort((a, b) => {
       if (!a?.timestamp || !b?.timestamp) return 0;
       return new Date(a.timestamp) - new Date(b.timestamp);
     });
@@ -84,6 +90,9 @@ const ChatMessages = ({
       onReactionAdd,
       onReactionRemove
     };
+
+    console.log('메세지 렌더링: ', msg);
+    if(msg.type === "file") console.log('메세지 렌더링: ', msg);
 
     const MessageComponent = {
       system: SystemMessage,
@@ -102,6 +111,47 @@ const ChatMessages = ({
       />
     );
   }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, socketRef]);
+
+  const MessageRow = React.memo(function MessageRow({
+    msg,
+    idx,
+    currentUser,
+    room,
+    onReactionAdd,
+    onReactionRemove,
+    socketRef,
+    isMine,
+  }) {
+    if (!msg) return null;
+
+    const commonProps = {
+      currentUser,
+      room,
+      onReactionAdd,
+      onReactionRemove,
+    };
+
+    if (msg.type === 'file') {
+      console.log('파일 메세지 렌더링: ', msg);
+    }
+
+    const MessageComponent = {
+      system: SystemMessage,
+      file: FileMessage,
+    }[msg.type] || UserMessage;
+
+    return (
+      <MessageComponent
+        key={msg._id || `msg-${idx}`}
+        {...commonProps}
+        msg={msg}
+        content={msg.content}
+        isMine={msg.type !== 'system' ? isMine(msg) : undefined}
+        isStreaming={msg.type === 'ai' ? msg.isStreaming || false : undefined}
+        socketRef={socketRef}
+      />
+    );
+  });
 
   return (
     <VStack
@@ -137,7 +187,20 @@ const ChatMessages = ({
       {allMessages.length === 0 ? (
         <EmptyMessages />
       ) : (
-        allMessages.map((msg, idx) => renderMessage(msg, idx))
+        // allMessages.map((msg, idx) => renderMessage(msg, idx))
+        allMessages.map((msg, idx) => 
+              <MessageRow
+                key={msg._id || `msg-${idx}`}
+                msg={msg}
+                idx={idx}
+                currentUser={currentUser}
+                room={room}
+                onReactionAdd={onReactionAdd}
+                onReactionRemove={onReactionRemove}
+                socketRef={socketRef}
+                isMine={isMine}
+              />
+        )
       )}
     </VStack>
   );

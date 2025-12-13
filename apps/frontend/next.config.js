@@ -14,7 +14,12 @@ const nextConfig = {
   // 개발 환경에서만 더 자세한 에러 로깅
   ...(process.env.NODE_ENV === 'development' && {
     experimental: {
-      forceSwcTransforms: true
+      forceSwcTransforms: true,
+    allowedDevOrigins: [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://172.20.5.132:3000"
+    ]
     }
   })
 };

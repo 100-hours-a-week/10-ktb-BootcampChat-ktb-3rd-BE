@@ -23,6 +23,7 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
   // 컴포넌트 마운트 시 이미지 설정
   useEffect(() => {
     const imageUrl = getProfileImageUrl(currentImage);
+    
     setPreviewUrl(imageUrl);
   }, [currentImage]);
 
@@ -46,6 +47,7 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
 
       // 파일 미리보기 생성
       const objectUrl = URL.createObjectURL(file);
+      console.log('objectUrl: ', objectUrl);
       setPreviewUrl(objectUrl);
 
       // 인증 정보 확인
@@ -53,31 +55,47 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
         throw new Error('인증 정보가 없습니다.');
       }
 
-      // FormData 생성
-      const formData = new FormData();
-      formData.append('profileImage', file);
-
-      // 파일 업로드 요청
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/profile-image`, {
-        method: 'POST',
+      const uuid = crypto.randomUUID();
+      console.log('이미지 uuid: ', uuid);
+      console.log('url: ', `https://10-ktb-bootcamp-chat-ktb-3rd-files.s3.ap-northeast-2.amazonaws.com/profile/${uuid}`);
+    
+      const uploadToS3 = await fetch(`https://10-ktb-bootcamp-chat-ktb-3rd-files.s3.ap-northeast-2.amazonaws.com/profile/${uuid}`, {
+        method: 'PUT',
         headers: {
-          'x-auth-token': user?.token,
-          'x-session-id': user?.sessionId
+          'Content-Type': file.type,
         },
-        body: formData
+        body: file,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '이미지 업로드에 실패했습니다.');
+      //presigned Url로 이미지 업로드에 실패한 경우
+      if (!uploadToS3.ok) {
+        throw new Error('S3 업로드에 실패했습니다.');
       }
 
-      const data = await response.json();
+      //백엔드에 최종 이미지 URL 저장 요청
+      const saveRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/profile-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': user.token,
+          'x-session-id': user.sessionId,
+        },
+        body: JSON.stringify({ imageId: uuid }),
+      });
+
+      console.log('saveRes: ', saveRes);
+
+      if (!saveRes.ok) {
+        const errorData = await saveRes.json().catch(() => ({}));
+        throw new Error(errorData.message || '이미지 정보 저장에 실패했습니다.');
+      }
+
+      const data = await saveRes.json();
       
       // 로컬 스토리지의 사용자 정보 업데이트
       const updatedUser = {
         ...user,
-        profileImage: data.imageUrl
+        profileImage: uuid,
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
@@ -169,6 +187,7 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
       <CustomAvatar
         user={user}
         size="xl"
+        src={previewUrl}
         persistent={true}
         showInitials={true}
         data-testid="profile-image-avatar"

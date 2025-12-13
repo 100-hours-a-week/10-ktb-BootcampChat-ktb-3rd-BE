@@ -2,6 +2,14 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+# 빌드 인자 정의
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_SOCKET_URL
+
+# 환경 변수로 설정
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
+
 # 패키지 파일 복사
 COPY package.json ./
 
