@@ -331,7 +331,13 @@ const FileMessage = ({
      */
     // const originalname = getDecodedFilename(msg.file?.originalname || 'Unknown File');
     const originalname = msg.metadata?.originalname || 'Unknown File';
-    const size = fileService.formatFileSize(msg.metadata?.fileSize || 0);
+
+    /**
+     * Ellim: 웹소켓 메시지의 metadata 필드 사용 반영
+     * fileSize 대신 msg.file?.size 사용
+     */
+    console.log('파일 메타데이터: ', msg.metadata);
+    const size = fileService.formatFileSize(msg.metadata?.fileSize || msg.metadata.size || 0);
 
 
     const previewWrapperClass = "overflow-hidden";
