@@ -20,6 +20,7 @@ import static com.ktb.chatapp.model.Session.SESSION_TTL;
 @RequiredArgsConstructor
 public class SessionService {
 
+    private static final long HANDSHAKE_GRACE_MS = 10_000;
     private final SessionStore sessionStore;
     private final ConcurrentHashMap<String, Long> lastActivityCache = new ConcurrentHashMap<>();
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
@@ -124,6 +125,37 @@ public class SessionService {
             return SessionValidationResult.invalid("VALIDATION_ERROR", "세션 검증 중 오류가 발생했습니다.");
         }
     }
+
+    public SessionValidationResult validateSessionForHandshake(String userId, String sessionId) {
+        try {
+            if (userId == null || sessionId == null) {
+                return SessionValidationResult.invalid("INVALID_PARAMETERS", "유효하지 않은 세션 파라미터");
+            }
+
+            Session session = sessionStore.findBySessionId(sessionId).orElse(null);
+
+            if (session == null) {
+                return SessionValidationResult.invalid("INVALID_SESSION", "세션을 찾을 수 없습니다.");
+            }
+
+            if (!sessionId.equals(session.getSessionId())) {
+                return SessionValidationResult.invalid("INVALID_SESSION", "잘못된 세션 ID입니다.");
+            }
+
+            long now = Instant.now().toEpochMilli();
+            long diff = now - session.getLastActivity();
+
+            if (diff > SESSION_TIMEOUT + HANDSHAKE_GRACE_MS) {
+                removeSession(userId, sessionId);
+                return SessionValidationResult.invalid("SESSION_EXPIRED", "세션 만료");
+            }
+            return SessionValidationResult.valid(toSessionData(session));
+        } catch (Exception e) {
+            log.error("Handshake session validation error: userId={}, sessionId={}", userId, sessionId, e);
+            return SessionValidationResult.invalid("VALIDATION_ERROR", "세션 검증 중 오류");
+        }
+    }
+
 
     @Async
     public void updateLastActivity(String sessionId) {

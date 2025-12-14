@@ -114,7 +114,7 @@ public class JwtService {
         try {
             return jwtDecoder.decode(token).getClaim("sessionId");
         } catch (JwtException e) {
-            log.error("Failed to extract sessionId from token: {}", e.getMessage());
+            log.debug("Failed to extract sessionId from token: {}", e.getMessage());
             throw e;
         }
     }
@@ -139,7 +139,7 @@ public class JwtService {
         try {
             return expiredTokenDecoder.decode(token).getClaim("userId");
         } catch (JwtException e) {
-            log.error("Failed to extract userId from expired token: {}", e.getMessage());
+            log.debug("Failed to extract userId from expired token: {}", e.getMessage());
             return null;
         }
     }

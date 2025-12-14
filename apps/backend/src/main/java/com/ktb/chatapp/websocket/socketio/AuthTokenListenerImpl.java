@@ -3,6 +3,8 @@ package com.ktb.chatapp.websocket.socketio;
 import com.corundumstudio.socketio.AuthTokenListener;
 import com.corundumstudio.socketio.AuthTokenResult;
 import com.corundumstudio.socketio.SocketIOClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ktb.chatapp.dto.SocketAuth;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
@@ -11,6 +13,7 @@ import com.ktb.chatapp.service.SessionValidationResult;
 import com.ktb.chatapp.service.session.HandshakeSessionCacheService;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -24,22 +27,45 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 public class AuthTokenListenerImpl implements AuthTokenListener {
+
+    private static final int MAX_CONCURRENT_HANDSHAKES = 100;
+    private static final Semaphore HANDSHAKE_SEMAPHORE =
+            new Semaphore(MAX_CONCURRENT_HANDSHAKES);
 
     private final JwtService jwtService;
     private final SessionService sessionService;
     private final UserRepository userRepository;
     private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
     private final HandshakeSessionCacheService handshakeCache;
+    private final ObjectMapper objectMapper;
 
     @Override
     public AuthTokenResult getAuthTokenResult(Object _authToken, SocketIOClient client) {
+
+        if (!HANDSHAKE_SEMAPHORE.tryAcquire()) {
+            return new AuthTokenResult(false, Map.of(
+                    "message", "Server busy",
+                    "retryAfterMs", 3000
+            ));
+        }
+
+        String effectiveUserId;
+        String sessionId;
+
         try {
-            var authToken = (Map<?, ?>) _authToken;
-            String token = authToken.get("token") != null ? authToken.get("token").toString() : null;
-            String sessionId = authToken.get("sessionId") != null ? authToken.get("sessionId").toString() : null;
+            SocketAuth auth;
+            try {
+                auth = objectMapper.convertValue(_authToken, SocketAuth.class);
+            } catch (IllegalArgumentException e) {
+                return new AuthTokenResult(false, Map.of("message", "Invalid auth payload"));
+            }
+
+            String token = auth.token();
+            sessionId = auth.sessionId();
+
             if (token == null || sessionId == null) {
                 return new AuthTokenResult(false, Map.of("message", "Missing token or sessionId"));
             }
@@ -52,34 +78,39 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             }
 
             String cachedUserId = handshakeCache.getUserId(sessionId);
-            if (cachedUserId == null) {
+            if (cachedUserId != null) {
+                effectiveUserId = cachedUserId;
+            } else {
                 SessionValidationResult validation =
-                        sessionService.validateSession(userId, sessionId);
+                        sessionService.validateSessionForHandshake(userId, sessionId);
 
                 if (!validation.isValid()) {
                     return new AuthTokenResult(false, Map.of("message", "Invalid session"));
                 }
 
                 handshakeCache.cache(sessionId, userId);
-            }
-            User user = userRepository.findById(userId).orElse(null);
-            if (user == null) {
-                return new AuthTokenResult(false, Map.of("message", "User not found"));
+                effectiveUserId = userId;
             }
 
-            SocketUser socketUser = new SocketUser(
-                    user.getId(),
-                    user.getName(),
-                    sessionId,
-                    client.getSessionId().toString()
-            );
-            socketIOChatHandlerProvider.getObject().onConnect(client, socketUser);
-
-            return AuthTokenResult.AuthTokenResultSuccess;
-
-        } catch (Exception e) {
-            log.error("Socket.IO authentication error", e);
-            return new AuthTokenResult(false, Map.of("message", "Auth error"));
+        } finally {
+            HANDSHAKE_SEMAPHORE.release();
         }
+
+        User user = userRepository.findById(effectiveUserId).orElse(null);
+        if (user == null) {
+            return new AuthTokenResult(false, Map.of("message", "User not found"));
+        }
+
+        socketIOChatHandlerProvider.getObject().onConnect(
+                client,
+                new SocketUser(
+                        user.getId(),
+                        user.getName(),
+                        sessionId,
+                        client.getSessionId().toString()
+                )
+        );
+
+        return AuthTokenResult.AuthTokenResultSuccess;
     }
 }

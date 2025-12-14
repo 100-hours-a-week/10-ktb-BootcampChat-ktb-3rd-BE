@@ -29,11 +29,14 @@ public class SocketIOConfig {
     @Bean(destroyMethod = "stop")
     public SocketIOServer socketIOServer(AuthTokenListener authTokenListener) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
+        int cores = Runtime.getRuntime().availableProcessors();
+
         config.setHostname(host);
         config.setPort(port);
 
-        config.setBossThreads(2);
-        config.setWorkerThreads(8);
+        config.setBossThreads(1);
+//        config.setWorkerThreads(8);
+        config.setWorkerThreads(cores * 3);
 
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
@@ -46,14 +49,16 @@ public class SocketIOConfig {
         config.setOrigin("*");
 
         // Socket.IO settings
-        config.setPingTimeout(60000);
+//        config.setPingTimeout(60000);
         config.setPingInterval(25000);
-        config.setUpgradeTimeout(10000);
+//        config.setUpgradeTimeout(10000);
+        config.setUpgradeTimeout(20_000);
+        config.setPingTimeout(90_000);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
         config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
 
-        log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
+        log.debug("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
                 host, port, config.getBossThreads(), config.getWorkerThreads());
         var socketIOServer = new SocketIOServer(config);
 
