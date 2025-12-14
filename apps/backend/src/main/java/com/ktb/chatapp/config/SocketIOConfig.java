@@ -32,6 +32,9 @@ public class SocketIOConfig {
         config.setHostname(host);
         config.setPort(port);
 
+        config.setBossThreads(2);
+        config.setWorkerThreads(8);
+
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
         socketConfig.setAcceptBackLog(1024);

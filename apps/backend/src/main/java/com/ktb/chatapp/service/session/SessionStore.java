@@ -33,4 +33,7 @@ public interface SessionStore {
     void deleteAll(String userId);
 
     void delete(String userId, String sessionId);
+
+    void updateLastActivityBatch(String sessionId, long lastActivity);
+
 }

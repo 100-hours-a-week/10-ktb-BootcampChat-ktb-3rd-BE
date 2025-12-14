@@ -3,10 +3,14 @@ package com.ktb.chatapp.service;
 import com.ktb.chatapp.model.Session;
 import com.ktb.chatapp.service.session.SessionStore;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.convert.DurationStyle;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import static com.ktb.chatapp.model.Session.SESSION_TTL;
@@ -17,6 +21,7 @@ import static com.ktb.chatapp.model.Session.SESSION_TTL;
 public class SessionService {
 
     private final SessionStore sessionStore;
+    private final ConcurrentHashMap<String, Long> lastActivityCache = new ConcurrentHashMap<>();
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
     private static final long SESSION_TIMEOUT = SESSION_TTL_SEC * 1000;
 
@@ -74,11 +79,11 @@ public class SessionService {
                 return SessionValidationResult.invalid("INVALID_PARAMETERS", "유효하지 않은 세션 파라미터");
             }
 
-            log.info("validateSession latency test start");
+            log.debug("validateSession latency test start");
             long t1 = System.currentTimeMillis();
             Session session = sessionStore.findBySessionId(sessionId).orElse(null);
 //            Session session = sessionStore.findByUserId(userId).orElse(null);
-            log.info("validateSession findByUserId: {}ms", System.currentTimeMillis() - t1);
+            log.debug("validateSession findByUserId: {}ms", System.currentTimeMillis() - t1);
 
             if (session == null) {
                 log.warn("No session found for userId: {}", userId);
@@ -120,23 +125,15 @@ public class SessionService {
         }
     }
 
+    @Async
     public void updateLastActivity(String sessionId) {
         try {
             if (sessionId == null) {
                 log.warn("updateLastActivity called with null sessionId");
                 return;
             }
-
-            Session session = sessionStore.findBySessionId(sessionId).orElse(null);
-            if (session == null) {
-                log.debug("No session found to update last activity for session: {}", sessionId);
-                return;
-            }
-
-            session.setLastActivity(Instant.now().toEpochMilli());
-            session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
-            sessionStore.save(session);
-
+            long now = Instant.now().toEpochMilli();
+            lastActivityCache.put(sessionId, now);
         } catch (Exception e) {
             log.error("Failed to update session activity for sessionId: {}", sessionId, e);
         }
@@ -181,6 +178,14 @@ public class SessionService {
             log.error("Get active session error for userId: {}", userId, e);
             return null;
         }
+    }
+
+    public Map<String, Long> getLastActivityCache() {
+        return lastActivityCache;
+    }
+
+    public void clearLastActivityCache() {
+        lastActivityCache.clear();
     }
 
 }

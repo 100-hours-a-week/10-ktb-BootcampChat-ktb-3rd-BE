@@ -9,11 +9,11 @@ import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
@@ -33,6 +33,7 @@ public class ConnectionLoginHandler {
     private final UserRooms userRooms;
     private final RoomJoinHandler roomJoinHandler;
     private final RoomLeaveHandler roomLeaveHandler;
+    private final TaskScheduler taskScheduler;
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
@@ -40,12 +41,15 @@ public class ConnectionLoginHandler {
             UserRooms userRooms,
             RoomJoinHandler roomJoinHandler,
             RoomLeaveHandler roomLeaveHandler,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            TaskScheduler taskScheduler
+    ) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
         this.userRooms = userRooms;
         this.roomJoinHandler = roomJoinHandler;
         this.roomLeaveHandler = roomLeaveHandler;
+        this.taskScheduler = taskScheduler;
 
         // Register gauge metric for concurrent users
         Gauge.builder("socketio.concurrent.users", connectedUsers::size)
@@ -60,7 +64,7 @@ public class ConnectionLoginHandler {
         String userId = user.id();
         
         try {
-            notifyDuplicateLogin(client, userId);
+//            notifyDuplicateLogin(client, userId);
             client.set("user", user);
             
             userRooms.get(userId).forEach(roomId -> {
@@ -134,41 +138,73 @@ public class ConnectionLoginHandler {
         SocketUser user = getUserDto(client);
         return user != null ? user.name() : null;
     }
+
+    private void notifyDuplicateLogin(SocketIOClient client, String userId) {
+        var socketUser = connectedUsers.get(userId);
+        if (socketUser == null) return;
+
+        String existingSocketId = socketUser.socketId();
+        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
+        if (existingClient == null) return;
+
+        String deviceInfo = client.getHandshakeData().getHttpHeaders().get("User-Agent");
+        if (deviceInfo == null) deviceInfo = "unknown";
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", "new_login_attempt");
+        payload.put("deviceInfo", deviceInfo);
+        payload.put("ipAddress", client.getRemoteAddress() != null ? client.getRemoteAddress().toString() : "unknown");
+        payload.put("timestamp", System.currentTimeMillis());
+
+        existingClient.sendEvent(DUPLICATE_LOGIN, payload);
+
+        taskScheduler.schedule(() -> {
+            Map<String, Object> endPayload = new HashMap<>();
+            endPayload.put("reason", "duplicate_login");
+            endPayload.put("message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.");
+
+            try {
+                existingClient.sendEvent(SESSION_ENDED, endPayload);
+            } catch (Exception e) {
+                log.error("Error sending session ended", e);
+            }
+        }, new Date(System.currentTimeMillis() + 10000));
+    }
     
     /**
      * TODO 멀티 클러스터에서 동작 안함 다중 노드의 경우 다른  노드에 접속된 사용자는 통보 불가함
      * socketIOServer.getRoomOperations("user:" + userId) 로 처리 변경.
      */
-    private void notifyDuplicateLogin(SocketIOClient client, String userId) {
-        var socketUser = connectedUsers.get(userId);
-        if (socketUser == null) {
-            return;
-        }
-        String existingSocketId = socketUser.socketId();
-        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
-        if (existingClient == null) {
-            return;
-        }
-        
-        // Send duplicate login notification
-        existingClient.sendEvent(DUPLICATE_LOGIN, Map.of(
-                "type", "new_login_attempt",
-                "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
-                "ipAddress", client.getRemoteAddress().toString(),
-                "timestamp", System.currentTimeMillis()
-        ));
-        
-        new Thread(() -> {
-            try {
-                Thread.sleep(Duration.ofSeconds(10));
-                existingClient.sendEvent(SESSION_ENDED, Map.of(
-                        "reason", "duplicate_login",
-                        "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
-                ));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Error in duplicate login notification thread", e);
-            }
-        }).start();
-    }
+//    private void notifyDuplicateLogin(SocketIOClient client, String userId) {
+//        var socketUser = connectedUsers.get(userId);
+//        if (socketUser == null) {
+//            return;
+//        }
+//        String existingSocketId = socketUser.socketId();
+//        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
+//        if (existingClient == null) {
+//            return;
+//        }
+//
+//        // Send duplicate login notification
+//        existingClient.sendEvent(DUPLICATE_LOGIN, Map.of(
+//                "type", "new_login_attempt",
+//                "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
+//                "ipAddress", client.getRemoteAddress().toString(),
+//                "timestamp", System.currentTimeMillis()
+//        ));
+//
+//        new Thread(() -> {
+//            try {
+//                Thread.sleep(Duration.ofSeconds(10));
+//                existingClient.sendEvent(SESSION_ENDED, Map.of(
+//                        "reason", "duplicate_login",
+//                        "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
+//                ));
+//            } catch (InterruptedException e) {
+//                Thread.currentThread().interrupt();
+//                log.error("Error in duplicate login notification thread", e);
+//            }
+//        }).start();
+//    }
 }

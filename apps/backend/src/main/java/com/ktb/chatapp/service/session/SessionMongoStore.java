@@ -40,4 +40,9 @@ public class SessionMongoStore implements SessionStore {
     public void deleteAll(String userId) {
         sessionRepository.deleteByUserId(userId);
     }
+
+    @Override
+    public void updateLastActivityBatch(String sessionId, long lastActivity) {
+        sessionRepository.updateLastActivity(sessionId, lastActivity);
+    }
 }

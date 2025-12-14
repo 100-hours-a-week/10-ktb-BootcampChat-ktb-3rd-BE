@@ -2,6 +2,7 @@ package com.ktb.chatapp.service.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ktb.chatapp.model.Session;
+import com.ktb.chatapp.service.SessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -138,6 +139,24 @@ public class RedisSessionStore implements SessionStore {
             redis.delete(key);
         } catch (Exception e) {
             log.error("deleteAll 실패 (전체 무시)", e);
+        }
+    }
+
+    @Override
+    public void updateLastActivityBatch(String sessionId, long lastActivity) {
+        try {
+            String key = sessionKey(sessionId);
+            String json = redis.opsForValue().get(key);
+
+            if (json == null) return;
+
+            Session session = mapper.readValue(json, Session.class);
+            session.setLastActivity(lastActivity);
+            session.setExpiresAt(Instant.now().plusSeconds(SessionService.SESSION_TTL_SEC));
+
+            redis.opsForValue().set(key, mapper.writeValueAsString(session));
+        } catch (Exception e) {
+            log.error("Failed batch update for sessionId {}", sessionId, e);
         }
     }
 }

@@ -8,6 +8,7 @@ import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.session.HandshakeSessionCacheService;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
     private final SessionService sessionService;
     private final UserRepository userRepository;
     private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
+    private final HandshakeSessionCacheService handshakeCache;
 
     @Override
     public AuthTokenResult getAuthTokenResult(Object _authToken, SocketIOClient client) {
@@ -38,9 +40,6 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             var authToken = (Map<?, ?>) _authToken;
             String token = authToken.get("token") != null ? authToken.get("token").toString() : null;
             String sessionId = authToken.get("sessionId") != null ? authToken.get("sessionId").toString() : null;
-
-            log.info("HANDSHAKE => token={}, sessionId={}", token, sessionId);
-
             if (token == null || sessionId == null) {
                 return new AuthTokenResult(false, Map.of("message", "Missing token or sessionId"));
             }
@@ -52,19 +51,23 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
                 return new AuthTokenResult(false, Map.of("message", "Invalid token"));
             }
 
-            SessionValidationResult validationResult = sessionService.validateSession(userId, sessionId);
-            if (!validationResult.isValid()) {
-                log.error("Session validation failed: {}", validationResult.getMessage());
-                return new AuthTokenResult(false, Map.of("message", "Invalid session"));
-            }
+            String cachedUserId = handshakeCache.getUserId(sessionId);
+            if (cachedUserId == null) {
+                SessionValidationResult validation =
+                        sessionService.validateSession(userId, sessionId);
 
+                if (!validation.isValid()) {
+                    return new AuthTokenResult(false, Map.of("message", "Invalid session"));
+                }
+
+                handshakeCache.cache(sessionId, userId);
+            }
             User user = userRepository.findById(userId).orElse(null);
             if (user == null) {
-                log.error("User not found: {}", userId);
                 return new AuthTokenResult(false, Map.of("message", "User not found"));
             }
 
-            var socketUser = new SocketUser(
+            SocketUser socketUser = new SocketUser(
                     user.getId(),
                     user.getName(),
                     sessionId,
@@ -73,9 +76,10 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             socketIOChatHandlerProvider.getObject().onConnect(client, socketUser);
 
             return AuthTokenResult.AuthTokenResultSuccess;
+
         } catch (Exception e) {
             log.error("Socket.IO authentication error", e);
-            return new AuthTokenResult(false, Map.of("message", e.getMessage()));
+            return new AuthTokenResult(false, Map.of("message", "Auth error"));
         }
     }
 }
