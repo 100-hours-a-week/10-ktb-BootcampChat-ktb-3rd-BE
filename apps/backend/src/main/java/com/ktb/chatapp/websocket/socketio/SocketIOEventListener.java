@@ -2,7 +2,11 @@ package com.ktb.chatapp.websocket.socketio;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.event.*;
+
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,18 +39,44 @@ public class SocketIOEventListener {
 
     @EventListener
     public void handleRoomCreatedEvent(RoomCreatedEvent event) {
-        try {
-            socketIOServer.getRoomOperations("room-list").sendEvent(ROOM_CREATED, event.getRoomResponse());
-            log.debug("roomCreated 이벤트 발송: roomId={}", event.getRoomResponse().getId());
-        } catch (Exception e) {
-            log.error("roomCreated 이벤트 발송 실패", e);
-        }
+        var participants =
+                Optional.ofNullable(event.getRoomResponse().getParticipants())
+                        .orElse(List.of())
+                        .stream()
+                        .map(u -> Map.of(
+                                "_id", u.getId(),
+                                "name", u.getName(),
+                                "email", u.getEmail()
+                        ))
+                        .toList();
+
+        socketIOServer.getRoomOperations("room-list")
+                .sendEvent(ROOM_CREATED, Map.of(
+                        "roomId", event.getRoomResponse().getId(),
+                        "name", event.getRoomResponse().getName(),
+                        "participants", participants
+                ));
     }
 
     @EventListener
     public void handleRoomUpdatedEvent(RoomUpdatedEvent event) {
         try {
-            socketIOServer.getRoomOperations(event.getRoomId()).sendEvent(ROOM_UPDATE, event.getRoomResponse());
+            var participants =
+                    Optional.ofNullable(event.getRoomResponse().getParticipants())
+                            .orElse(List.of())
+                            .stream()
+                            .map(u -> Map.of(
+                                    "_id", u.getId(),
+                                    "name", u.getName(),
+                                    "email", u.getEmail()
+                            ))
+                            .toList();
+
+            socketIOServer.getRoomOperations(event.getRoomId())
+                    .sendEvent(ROOM_UPDATE, Map.of(
+                            "roomId", event.getRoomResponse().getId(),
+                            "participants", participants
+                    ));
             log.debug("roomUpdate 이벤트 발송: roomId={}", event.getRoomId());
         } catch (Exception e) {
             log.error("roomUpdate 이벤트 발송 실패: roomId={}", event.getRoomId(), e);

@@ -84,7 +84,7 @@ public class RedisSessionStore implements SessionStore {
 
             if (check == null) {
                 // propagation delay 발생 가능 → 5ms만 기다렸다가 재확인
-                Thread.sleep(5);
+//                Thread.sleep(5);
                 check = redis.opsForValue().get(sessionKey(session.getSessionId()));
             }
 

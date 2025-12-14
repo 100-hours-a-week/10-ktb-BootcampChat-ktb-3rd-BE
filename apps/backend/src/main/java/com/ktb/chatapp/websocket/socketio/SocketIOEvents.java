@@ -109,7 +109,12 @@ public final class SocketIOEvents {
      * Payload: roomId
      */
     public static final String ROOM_DELETED = "roomDeleted";
-    
+
+    /**
+     * 사용자 입장 알림 (diff)
+     * Payload: { user }
+     */
+    public static final String USER_JOINED = "userJoined";
     /**
      * 사용자 퇴장 알림
      * Payload: { userId, name }

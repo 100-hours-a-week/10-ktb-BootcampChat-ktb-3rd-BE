@@ -17,10 +17,8 @@ import com.ktb.chatapp.websocket.socketio.UserRooms;
 import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
 import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -124,32 +122,32 @@ public class RoomLeaveHandler {
             log.error("Error sending system message", e);
         }
     }
-    
+
     private void broadcastParticipantList(String roomId) {
         Optional<Room> roomOpt = roomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
             return;
         }
-        
-        var participantList = roomOpt.get()
-                .getParticipantIds()
-                .stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .map(UserResponse::from)
-                .toList();
-        
-        if (participantList.isEmpty()) {
-            return;
-        }
 
-        // Redis Pub/Sub를 통해 참가자 목록 업데이트 브로드캐스트
+        List<Map<String, Object>> participants =
+                roomOpt.get()
+                        .getParticipantIds()
+                        .stream()
+                        .map(userRepository::findById)
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .map(u -> Map.<String, Object>of(
+                                "_id", u.getId(),
+                                "name", u.getName()
+                        ))
+                        .toList();
+
+        // ✅ payload shape 통일
         broadcastService.broadcastToRoom(
                 ChatBroadcastEvent.TYPE_PARTICIPANTS_UPDATE,
                 roomId,
                 PARTICIPANTS_UPDATE,
-                participantList
+                participants
         );
     }
 

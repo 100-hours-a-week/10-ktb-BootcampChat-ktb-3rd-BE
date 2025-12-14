@@ -3,9 +3,7 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnDisconnect;
-import com.ktb.chatapp.websocket.socketio.ConnectedUsers;
-import com.ktb.chatapp.websocket.socketio.SocketUser;
-import com.ktb.chatapp.websocket.socketio.UserRooms;
+import com.ktb.chatapp.websocket.socketio.*;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -34,6 +32,7 @@ public class ConnectionLoginHandler {
     private final RoomJoinHandler roomJoinHandler;
     private final RoomLeaveHandler roomLeaveHandler;
     private final TaskScheduler taskScheduler;
+    private final RedisChatDataStore redisChatDataStore;
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
@@ -42,7 +41,8 @@ public class ConnectionLoginHandler {
             RoomJoinHandler roomJoinHandler,
             RoomLeaveHandler roomLeaveHandler,
             MeterRegistry meterRegistry,
-            TaskScheduler taskScheduler
+            TaskScheduler taskScheduler,
+            RedisChatDataStore chatDataStore
     ) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
@@ -50,12 +50,14 @@ public class ConnectionLoginHandler {
         this.roomJoinHandler = roomJoinHandler;
         this.roomLeaveHandler = roomLeaveHandler;
         this.taskScheduler = taskScheduler;
+        this.redisChatDataStore = chatDataStore;
 
         // Register gauge metric for concurrent users
-        Gauge.builder("socketio.concurrent.users", connectedUsers::size)
+        Gauge.builder("socketio.concurrent.users", () -> chatDataStore.connectedCount())
                 .description("Current number of concurrent Socket.IO users")
                 .register(meterRegistry);
     }
+
     
     /**
      * auth 처리가 선행되어야 해서 @OnConnect 대신 별도 메서드로 구현
@@ -64,16 +66,15 @@ public class ConnectionLoginHandler {
         String userId = user.id();
         
         try {
-//            notifyDuplicateLogin(client, userId);
             client.set("user", user);
+            connectedUsers.set(userId, user);
+            redisChatDataStore.incrementConnected();
             
             userRooms.get(userId).forEach(roomId -> {
                 // 재접속 시 기존 참여 방 재입장 처리
                 roomJoinHandler.handleJoinRoom(client, roomId);
             });
             
-            connectedUsers.set(userId, user);
-
             log.debug("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
                     getUserName(client), userId, connectedUsers.size());
 
@@ -106,16 +107,15 @@ public class ConnectionLoginHandler {
             var socketUser = connectedUsers.get(userId);
             if (socketUser != null && socketId.equals(socketUser.socketId())) {
                 connectedUsers.del(userId);
+                redisChatDataStore.decrementConnected();
             } else {
                 log.warn("Socket.IO disconnect: User {} has a different active connection. Skipping cleanup.", userId);
             }
 
             client.leaveRooms(Set.of("user:" + userId, "room-list"));
             client.del("user");
-            client.disconnect();
+//            client.disconnect();
             
-            log.debug("Socket.IO user disconnected: {} ({}) - Total concurrent users: {}",
-                    userName, userId, connectedUsers.size());
         } catch (Exception e) {
             log.error("Error handling Socket.IO disconnection", e);
             client.sendEvent(ERROR, Map.of(
