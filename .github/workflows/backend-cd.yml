@@ -1,0 +1,43 @@
+name: Backend CD
+
+on:
+  workflow_run:
+    workflows: ["Backend CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Add SSH Key
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Deploy to Servers
+        env:
+          SERVERS: ${{ secrets.EC2_SERVERS }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        run: |
+          set -e
+          for server in $(echo "$SERVERS" | jq -r '.[]'); do
+            echo "Deploying to $server"
+            ssh -o StrictHostKeyChecking=no ubuntu@"$server" bash -s <<EOF
+              set -e
+              sudo docker pull ${DOCKER_USERNAME}/backend-app:latest
+              sudo docker stop backend-container || true
+              sudo docker rm backend-container || true
+
+              sudo docker run -d \
+                --name backend-container \
+                --env-file /home/ubuntu/.env \
+                -p 5001:5001 \
+                -p 5002:5002 \
+                ${DOCKER_USERNAME}/backend-app:latest
+          EOF
+            done
