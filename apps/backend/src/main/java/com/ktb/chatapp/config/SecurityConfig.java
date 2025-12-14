@@ -78,12 +78,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )
-                .securityMatcher(request -> {
-                    String path = request.getRequestURI();
-                    return path.startsWith("/api/")
-                            && !path.equals("/api/files/upload")
-                            && !path.startsWith("/api/uploads/");
-                })
+                .securityMatcher("/api/**")
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
