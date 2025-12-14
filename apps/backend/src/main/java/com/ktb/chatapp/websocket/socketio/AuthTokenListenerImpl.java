@@ -32,25 +32,22 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 public class AuthTokenListenerImpl implements AuthTokenListener {
 
-//    private static final int MAX_CONCURRENT_HANDSHAKES = 1000;
-//    private static final Semaphore HANDSHAKE_SEMAPHORE =
-//            new Semaphore(MAX_CONCURRENT_HANDSHAKES);
+    // ✅ macOS 기준 권장: 100~300
+    private static final int MAX_CONCURRENT_HANDSHAKES = 120;
+    private static final Semaphore HANDSHAKE_SEMAPHORE =
+            new Semaphore(MAX_CONCURRENT_HANDSHAKES);
 
     private final JwtService jwtService;
     private final SessionService sessionService;
-    private final UserRepository userRepository;
-    private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
     private final HandshakeSessionCacheService handshakeCache;
     private final ObjectMapper objectMapper;
+
 
     @Override
     public AuthTokenResult getAuthTokenResult(Object authPayload, SocketIOClient client) {
 
-        final String engineSessionId = client.getSessionId().toString();
+        String engineSessionId = client.getSessionId().toString();
 
-        /* -------------------------------------------------
-         * 1️⃣ EngineSession 기반 캐시 우선 (재연결 / E2E 핵심)
-         * ------------------------------------------------- */
         CachedHandshake cached = handshakeCache.getByEngineSession(engineSessionId);
         if (cached != null) {
             client.set("user", new SocketUser(
@@ -62,69 +59,130 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             return AuthTokenResult.AuthTokenResultSuccess;
         }
 
-        /* -------------------------------------------------
-         * 2️⃣ auth payload 파싱
-         * ------------------------------------------------- */
         SocketAuth auth;
         try {
             auth = objectMapper.convertValue(authPayload, SocketAuth.class);
         } catch (IllegalArgumentException e) {
             return new AuthTokenResult(false, null);
         }
-
         if (auth == null || auth.token() == null || auth.sessionId() == null) {
             return new AuthTokenResult(false, null);
         }
 
-        /* -------------------------------------------------
-         * 3️⃣ JWT → userId 추출
-         * ------------------------------------------------- */
-        final String userId;
+        String userId;
         try {
             userId = jwtService.extractUserId(auth.token());
         } catch (JwtException e) {
             return new AuthTokenResult(false, null);
         }
 
-        /* -------------------------------------------------
-         * 4️⃣ 세션 검증 (STALE 허용)
-         * ------------------------------------------------- */
-        SessionValidationResult validation =
-                sessionService.validateSessionForHandshake(userId, auth.sessionId());
-
-        if (!validation.isValid()) {
+        if (!sessionService
+                .validateSessionForHandshake(userId, auth.sessionId())
+                .isValid()) {
             return new AuthTokenResult(false, null);
         }
 
-        /* -------------------------------------------------
-         * 5️⃣ User 조회 (name 채우기)
-         * ------------------------------------------------- */
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null) {
-            return new AuthTokenResult(false, null);
-        }
-
-        /* -------------------------------------------------
-         * 6️⃣ SocketUser 세팅
-         * ------------------------------------------------- */
         SocketUser socketUser = new SocketUser(
-                user.getId(),
-                null,              // ✅ 핵심
+                userId,
+                null, // name은 JOIN_ROOM에서 채워도 됨
                 auth.sessionId(),
                 engineSessionId
         );
 
         client.set("user", socketUser);
 
-        /* -------------------------------------------------
-         * 7️⃣ Handshake 캐시 저장 (best-effort)
-         * ------------------------------------------------- */
         handshakeCache.cacheByEngineSession(
                 engineSessionId,
-                new CachedHandshake(user.getId(), auth.sessionId(), user.getName())
+                new CachedHandshake(userId, auth.sessionId(), null)
         );
 
-        log.info("[AUTH] success userId={} engineSession={}", user.getId(), engineSessionId);
         return AuthTokenResult.AuthTokenResultSuccess;
     }
+
+
+//    @Override
+//    public AuthTokenResult getAuthTokenResult(Object authPayload, SocketIOClient client) {
+//
+//        // 1️⃣ handshake rate limit
+//        if (!HANDSHAKE_SEMAPHORE.tryAcquire()) {
+//            return new AuthTokenResult(false, Map.of("message", "server busy"));
+//        }
+//
+//        try {
+//            final String engineSessionId = client.getSessionId().toString();
+//
+//            /* --------------------------------------------
+//             * 2️⃣ EngineSession cache 우선
+//             * -------------------------------------------- */
+//            CachedHandshake cached = handshakeCache.getByEngineSession(engineSessionId);
+//            if (cached != null) {
+//                client.set("user", new SocketUser(
+//                        cached.userId(),
+//                        cached.username(), // null 가능
+//                        cached.sessionId(),
+//                        engineSessionId
+//                ));
+//                return AuthTokenResult.AuthTokenResultSuccess;
+//            }
+//
+//            /* --------------------------------------------
+//             * 3️⃣ auth payload 파싱
+//             * -------------------------------------------- */
+//            SocketAuth auth;
+//            try {
+//                auth = objectMapper.convertValue(authPayload, SocketAuth.class);
+//            } catch (IllegalArgumentException e) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            if (auth == null || auth.token() == null || auth.sessionId() == null) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 4️⃣ JWT → userId
+//             * -------------------------------------------- */
+//            final String userId;
+//            try {
+//                userId = jwtService.extractUserId(auth.token());
+//            } catch (JwtException e) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 5️⃣ 세션 검증 (STALE 허용)
+//             * -------------------------------------------- */
+//            SessionValidationResult validation =
+//                    sessionService.validateSessionForHandshake(userId, auth.sessionId());
+//
+//            if (!validation.isValid()) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 6️⃣ SocketUser (name 없음 → JOIN에서 채움)
+//             * -------------------------------------------- */
+//            SocketUser socketUser = new SocketUser(
+//                    userId,
+//                    null,
+//                    auth.sessionId(),
+//                    engineSessionId
+//            );
+//            client.set("user", socketUser);
+//
+//            /* --------------------------------------------
+//             * 7️⃣ handshake cache
+//             * -------------------------------------------- */
+//            handshakeCache.cacheByEngineSession(
+//                    engineSessionId,
+//                    new CachedHandshake(userId, auth.sessionId(), null)
+//            );
+//
+//            return AuthTokenResult.AuthTokenResultSuccess;
+//
+//        } finally {
+//            // ✅ acquire 성공한 경우에만 release
+//            HANDSHAKE_SEMAPHORE.release();
+//        }
+//    }
 }

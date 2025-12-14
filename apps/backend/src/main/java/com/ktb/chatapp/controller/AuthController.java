@@ -112,8 +112,8 @@ public class AuthController {
 
             user = userRepository.save(user);
 
-            MongoDatabase db = mongoTemplate.getDb();
-            db.runCommand(new Document("ping", 1));
+//            MongoDatabase db = mongoTemplate.getDb();
+//            db.runCommand(new Document("ping", 1));
 
             LoginResponse response = LoginResponse.builder()
                     .success(true)
@@ -304,23 +304,21 @@ public class AuthController {
 
             // 토큰에서 사용자 정보 추출
             String userId = jwtService.extractUserId(token);
-            
-            Optional<User> userOpt = userRepository.findById(userId);
 
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new TokenVerifyResponse(false, "사용자를 찾을 수 없습니다.", null));
-            }
-
-            User user = userOpt.get();
             // 세션 유효성 검증
-            if (!sessionService.validateSession(user.getId(), sessionId).isValid()) {
+            if (!sessionService.validateSession(userId, sessionId).isValid()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new TokenVerifyResponse(false, "만료된 세션입니다.", null));
             }
 
-            AuthUserDto authUserDto = new AuthUserDto(user.getId(), user.getName(), user.getEmail(), user.getProfileImage());
-            return ResponseEntity.ok(new TokenVerifyResponse(true, "토큰이 유효합니다.", authUserDto));
+            return ResponseEntity.ok(
+                    new TokenVerifyResponse(
+                            true,
+                            "토큰이 유효합니다.",
+                            new AuthUserDto(userId, null, null, null)
+                    )
+            );
+
 
         } catch (Exception e) {
             log.error("Token verification error: ", e);
@@ -357,36 +355,26 @@ public class AuthController {
             // 만료된 토큰이라도 사용자 정보는 추출 가능
             String userId = jwtService.extractUserIdFromExpiredToken(token);
             
-            Optional<User> userOpt = userRepository.findById(userId);
-
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new TokenRefreshResponse(false, "사용자를 찾을 수 없습니다.", null, null));
-            }
-
-
-            // 세션 유효성 검증
-            var user = userOpt.get();
-            if (!sessionService.validateSession(user.getId(), sessionId).isValid()) {
+            if (!sessionService.validateSession(userId, sessionId).isValid()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new TokenRefreshResponse(false, "만료된 세션입니다.", null, null));
             }
 
             // 세션 갱신 - 새로운 세션 ID 생성
-            sessionService.removeSession(user.getId(), sessionId);
+            sessionService.removeSession(userId, sessionId);
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),
                     request.getHeader("User-Agent")
             );
 
-            SessionCreationResult newSessionInfo = sessionService.createSession(user.getId(), metadata);
+            SessionCreationResult newSessionInfo = sessionService.createSession(userId, metadata);
 
             // 새로운 토큰과 세션 ID 생성
             String newToken = jwtService.generateToken(
-                newSessionInfo.getSessionId(),
-                user.getEmail(),
-                user.getId()
+                    newSessionInfo.getSessionId(),
+                    null,
+                    userId
             );
             return ResponseEntity.ok(new TokenRefreshResponse(true, "토큰이 갱신되었습니다.", newToken, newSessionInfo.getSessionId()));
 

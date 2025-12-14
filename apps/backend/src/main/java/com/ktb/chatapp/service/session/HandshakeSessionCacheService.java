@@ -21,30 +21,55 @@ public class HandshakeSessionCacheService {
     private static final String PREFIX = "ws:handshake:engine:";
     private static final Duration TTL = Duration.ofSeconds(60);
 
+    private final ConcurrentMap<String, CachedHandshake> localCache =
+            new ConcurrentHashMap<>();
+
     public void cacheByEngineSession(String engineSessionId, CachedHandshake handshake) {
+
+        // 1️⃣ local cache는 무조건
+        localCache.put(engineSessionId, handshake);
+
+        // 2️⃣ Redis는 실패해도 OK
         try {
             String json = objectMapper.writeValueAsString(handshake);
-            redisTemplate.opsForValue().set(PREFIX + engineSessionId, json, TTL);
+            redisTemplate.opsForValue().set(
+                    PREFIX + engineSessionId,
+                    json,
+                    TTL
+            );
         } catch (Exception e) {
-            log.warn("[HANDSHAKE][CACHE] write failed engineSessionId={}", engineSessionId, e);
-            // 절대 throw 하지 말기
+            log.debug("[HANDSHAKE][CACHE] redis write skipped engineSessionId={}", engineSessionId);
         }
     }
 
     public CachedHandshake getByEngineSession(String engineSessionId) {
-        String json = redisTemplate.opsForValue().get(PREFIX + engineSessionId);
-        if (json == null) return null;
 
+        // 1️⃣ local hit
+        CachedHandshake local = localCache.get(engineSessionId);
+        if (local != null) {
+            return local;
+        }
+
+        // 2️⃣ redis hit (optional)
         try {
-            return objectMapper.readValue(json, CachedHandshake.class);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            // 캐시 깨졌으면 evict 하고 null
-            evictByEngineSession(engineSessionId);
+            String json = redisTemplate.opsForValue().get(PREFIX + engineSessionId);
+            if (json == null) return null;
+
+            CachedHandshake parsed =
+                    objectMapper.readValue(json, CachedHandshake.class);
+
+            // local warm
+            localCache.put(engineSessionId, parsed);
+            return parsed;
+
+        } catch (Exception e) {
+            // ❗ 절대 throw 금지
+            log.debug("[HANDSHAKE][CACHE] redis read failed engineSessionId={}", engineSessionId);
             return null;
         }
     }
-
     public void evictByEngineSession(String engineSessionId) {
+        localCache.remove(engineSessionId);
         redisTemplate.delete(PREFIX + engineSessionId);
     }
 }

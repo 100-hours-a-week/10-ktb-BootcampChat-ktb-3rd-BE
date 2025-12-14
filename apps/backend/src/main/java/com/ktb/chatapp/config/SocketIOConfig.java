@@ -3,6 +3,7 @@ package com.ktb.chatapp.config;
 import com.corundumstudio.socketio.AuthTokenListener;
 import com.corundumstudio.socketio.SocketConfig;
 import com.corundumstudio.socketio.SocketIOServer;
+import com.corundumstudio.socketio.Transport;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
@@ -43,14 +44,16 @@ public class SocketIOConfig {
 
         // 튜닝필요
         config.setBossThreads(2);
-        config.setWorkerThreads(cores * 2);
+        config.setWorkerThreads(cores * 4);
 
-        config.setPingInterval(30000);
-        config.setUpgradeTimeout(120000);
-        config.setPingTimeout(120000);
+        config.setPingInterval(60000);
+        config.setUpgradeTimeout(180000);
+        config.setPingTimeout(180000);
 
         config.setMaxFramePayloadLength(1024 * 1024);
         config.setMaxHttpContentLength(1024 * 1024);
+        config.setTransports(Transport.POLLING, Transport.WEBSOCKET);
+
 
         config.setAllowCustomRequests(true);
         config.setOrigin("*");
@@ -58,7 +61,7 @@ public class SocketIOConfig {
         // Socket.IO settings
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
-        socketConfig.setAcceptBackLog(16384);
+        socketConfig.setAcceptBackLog(32768);
         socketConfig.setTcpSendBufferSize(65536);
         socketConfig.setTcpReceiveBufferSize(65536);
         socketConfig.setTcpNoDelay(true);

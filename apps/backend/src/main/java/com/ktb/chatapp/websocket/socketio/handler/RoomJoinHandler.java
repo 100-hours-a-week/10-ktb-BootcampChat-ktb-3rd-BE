@@ -20,6 +20,8 @@ import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
 import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +39,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class RoomJoinHandler {
+    private final Map<String, Map<String, UserResponse>> roomUsers = new ConcurrentHashMap<>();
 
     private final SocketIOServer socketIOServer;
     private final MessageRepository messageRepository;
@@ -79,28 +82,35 @@ public class RoomJoinHandler {
             client.joinRoom(roomId);
             client.set("currentRoomId", roomId);
 
-            // 1️⃣ 본인에게만 전체 participants 전달
-            List<Map<String, Object>> participants = buildParticipantsPayload(room);
-            User me = userRepository.findById(userId).orElse(null);
+            // ✅ 1️⃣ UserResponse 생성 (DB ❌)
+            UserResponse me = UserResponse.builder()
+                    .id(userId)
+                    .name(socketUser.name())
+                    .build();
+
+            // ✅ 2️⃣ roomUsers 캐시에 저장
+            roomUsers
+                    .computeIfAbsent(roomId, k -> new ConcurrentHashMap<>())
+                    .put(userId, me);
+
+            // ✅ 3️⃣ 본인에게만 전체 participants
+            Collection<UserResponse> participants =
+                    roomUsers.get(roomId).values();
+
             client.sendEvent(JOIN_ROOM_SUCCESS, Map.of(
                     "roomId", roomId,
                     "joined", true,
                     "participants", participants,
-                    "me", me == null ? null : Map.of("_id", me.getId(), "name", me.getName())
+                    "me", me
             ));
 
-            // 2️⃣ 다른 사람들에게는 diff 이벤트만
+            // ✅ 4️⃣ 다른 사람들에게 diff 이벤트
             if (firstJoin) {
-                UserResponse joinedUser = UserResponse.builder()
-                        .id(userId)
-                        .name(socketUser.name())
-                        .build();
-
                 broadcastService.broadcastToRoom(
                         ChatBroadcastEvent.TYPE_PARTICIPANTS_UPDATE,
                         roomId,
                         USER_JOINED,
-                        Map.of("user", joinedUser)
+                        Map.of("user", me)
                 );
             }
 
