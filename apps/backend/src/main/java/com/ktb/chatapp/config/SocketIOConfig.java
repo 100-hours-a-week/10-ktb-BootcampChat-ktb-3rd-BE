@@ -3,13 +3,18 @@ package com.ktb.chatapp.config;
 import com.corundumstudio.socketio.AuthTokenListener;
 import com.corundumstudio.socketio.SocketConfig;
 import com.corundumstudio.socketio.SocketIOServer;
+import com.corundumstudio.socketio.Transport;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.ktb.chatapp.service.session.HandshakeSessionCacheService;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
+import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -17,8 +22,11 @@ import org.springframework.context.annotation.Configuration;
 
 @Slf4j
 @Configuration
+@RequiredArgsConstructor
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 public class SocketIOConfig {
+    private final HandshakeSessionCacheService handshakeCache;
+    private final ObjectProvider<ConnectionLoginHandler> connectionLoginHandlerProvider;
 
     @Value("${socketio.server.host:localhost}")
     private String host;
@@ -34,37 +42,56 @@ public class SocketIOConfig {
         config.setHostname(host);
         config.setPort(port);
 
-        config.setBossThreads(1);
-//        config.setWorkerThreads(8);
-        config.setWorkerThreads(cores * 3);
+        // 튜닝필요
+        config.setBossThreads(2);
+        config.setWorkerThreads(cores * 4);
 
-        var socketConfig = new SocketConfig();
-        socketConfig.setReuseAddress(true);
-        socketConfig.setAcceptBackLog(1024);
-        socketConfig.setTcpSendBufferSize(65536);
-        socketConfig.setTcpReceiveBufferSize(65536);
-        socketConfig.setTcpNoDelay(true);
-        config.setSocketConfig(socketConfig);
+        config.setPingInterval(60000);
+        config.setUpgradeTimeout(180000);
+        config.setPingTimeout(180000);
 
+        config.setMaxFramePayloadLength(1024 * 1024);
+        config.setMaxHttpContentLength(1024 * 1024);
+        config.setTransports(Transport.POLLING, Transport.WEBSOCKET);
+
+
+        config.setAllowCustomRequests(true);
         config.setOrigin("*");
 
         // Socket.IO settings
-//        config.setPingTimeout(60000);
-        config.setPingInterval(25000);
-//        config.setUpgradeTimeout(10000);
-        config.setUpgradeTimeout(20_000);
-        config.setPingTimeout(90_000);
+        var socketConfig = new SocketConfig();
+        socketConfig.setReuseAddress(true);
+        socketConfig.setAcceptBackLog(32768);
+        socketConfig.setTcpSendBufferSize(65536);
+        socketConfig.setTcpReceiveBufferSize(65536);
+        socketConfig.setTcpNoDelay(true);
+
+        config.setSocketConfig(socketConfig);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
         config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
 
-        log.debug("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
+        // ✅ 서버는 여기서 단 한 번만 생성
+        SocketIOServer server = new SocketIOServer(config);
+
+        // ✅ Engine.IO 연결 성공
+        server.addConnectListener(client -> {
+            log.info("[CONNECT] clientId={}", client.getSessionId());
+        });
+
+
+        // ✅ 연결 종료
+        server.addDisconnectListener(client -> {
+            log.info("[DISCONNECT] clientId={} transport={}", client.getSessionId(), client.getTransport());
+        });
+
+        // ✅ Auth handshake
+        server.getNamespace(Namespace.DEFAULT_NAME)
+                .addAuthTokenListener(authTokenListener);
+
+        log.info("Socket.IO server started on {}:{} (boss={}, worker={})",
                 host, port, config.getBossThreads(), config.getWorkerThreads());
-        var socketIOServer = new SocketIOServer(config);
-
-        socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
-
-        return socketIOServer;
+        return server;
     }
 
     // SpringAnnotationScanner 제거됨

@@ -39,25 +39,30 @@ public class RedisChatDataStore implements ChatDataStore {
      * 예: chat:data:userroom:roomids:user123
      */
     private static final String KEY_PREFIX = "chat:data:";
-
-    /**
-     * 데이터 만료 시간 (24시간)
-     * - 유저가 연결 해제 후 재접속하지 않으면 24시간 후 자동 삭제
-     * - 메모리 누수 방지
-     */
+    private static final String CONNECTED_COUNT_KEY = "chat:connected:count";
     private static final long DEFAULT_TTL_HOURS = 24;
 
-    /**
-     * RedisTemplate - Spring이 제공하는 Redis 연산 도구
-     * - String 타입으로 직렬화하여 저장 (JSON 형태)
-     */
     private final RedisTemplate<String, String> redisTemplate;
-
-    /**
-     * ObjectMapper - Java 객체 <-> JSON 변환
-     * - Set<String>, Map 등의 복잡한 객체도 JSON으로 저장
-     */
     private final ObjectMapper objectMapper;
+
+    /* =========================
+     * 연결 수 관리 (O(1))
+     * ========================= */
+    public void incrementConnected() {
+        redisTemplate.opsForValue().increment(CONNECTED_COUNT_KEY);
+    }
+
+    public void decrementConnected() {
+        redisTemplate.opsForValue().decrement(CONNECTED_COUNT_KEY);
+    }
+
+    public int connectedCount() {
+        String v = redisTemplate.opsForValue().get(CONNECTED_COUNT_KEY);
+        if (v == null) return 0;
+        try { return Integer.parseInt(v); }
+        catch (NumberFormatException e) { return 0; }
+    }
+
 
     /**
      * Redis에서 데이터 조회
@@ -131,10 +136,10 @@ public class RedisChatDataStore implements ChatDataStore {
      */
     @Override
     public int size() {
-        Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-        return keys != null ? keys.size() : 0;
+        throw new UnsupportedOperationException(
+                "RedisChatDataStore.size() is disabled (keys() is forbidden)"
+        );
     }
-
     /**
      * 실제 Redis 키 생성
      * - prefix를 붙여서 다른 데이터와 충돌 방지

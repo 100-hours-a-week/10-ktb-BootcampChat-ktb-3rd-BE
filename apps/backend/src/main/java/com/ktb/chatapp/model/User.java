@@ -52,7 +52,7 @@ public class User {
     /**
      * Email lowercase conversion before save
      */
-    @Component
+//    @Component
     public static class UserEventListener extends AbstractMongoEventListener<User> {
         
         private final org.springframework.context.ApplicationContext applicationContext;

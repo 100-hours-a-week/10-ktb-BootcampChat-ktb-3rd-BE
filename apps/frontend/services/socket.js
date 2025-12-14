@@ -41,11 +41,11 @@ class SocketService {
         this.socket = io(socketUrl, {
           ...options,
           transports: ['websocket', 'polling'],
-          reconnection: true,
+          reconnection: false,
           reconnectionAttempts: this.maxReconnectAttempts,
           reconnectionDelay: this.retryDelay,
           reconnectionDelayMax: 5000,
-          timeout: 20000,
+          timeout: 40000,
           forceNew: true
         });
 
@@ -78,26 +78,12 @@ class SocketService {
       resolve(this.socket);
     });
 
-    this.socket.on('disconnect', (reason) => {
-      this.connected = false;
-      this.cleanup(CLEANUP_REASONS.DISCONNECT);
-    });
-
-    this.socket.on('connect_error', (error) => {
-      console.log('Socket connection error:', error.message);
-      if (error.message === 'Invalid session') {
-        reject(error);
-        return;
-      }
-      if (error.message === 'websocket error') {
-        this.reconnectAttempts++;
-      }
-      
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        clearTimeout(connectionTimeout);
-        reject(error);
-      }
-    });
+      this.socket.on('disconnect', (reason) => {
+          this.connected = false;
+          if (!this.isReconnecting) {
+              this.cleanup(CLEANUP_REASONS.DISCONNECT);
+          }
+      });
 
     // duplicate_login 이벤트 수신
     // type: 'new_login_attempt' - 새로 로그인한 디바이스
@@ -125,6 +111,44 @@ class SocketService {
     this.socket.on('messageReaction', (data) => {
       this.reactionHandlers.forEach(handler => handler(data));
     });
+
+      this.socket.on('connect_error', (error) => {
+          if (this.isReconnecting) return;
+          const msg = error?.message || '';
+          console.warn('connect_error:', msg);
+
+          // ❌ 인증 실패 → 즉시 종료
+          if (msg.includes('Invalid session') || msg.includes('Invalid token')) {
+              this.cleanup(CLEANUP_REASONS.MANUAL);
+              return;
+          }
+
+          // ⏳ 서버 과부하 보호
+          if (msg.includes('Server busy')) {
+              this.reconnectAttempts++;
+
+              const delay =
+                  Math.min(
+                      this.retryDelay * Math.pow(2, this.reconnectAttempts),
+                      20000
+                  ) + Math.random() * 1000;
+
+              console.warn(`Server busy → retry after ${delay}ms`);
+
+              setTimeout(() => this.reconnect(), delay);
+              return;
+          }
+
+          // 🌐 네트워크 오류 (reset, timeout 등)
+          this.reconnectAttempts++;
+
+          if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+              this.cleanup(CLEANUP_REASONS.MANUAL);
+              return;
+          }
+
+          this.reconnect();
+      });
   }
 
   cleanup(reason = CLEANUP_REASONS.MANUAL) {
@@ -283,25 +307,23 @@ class SocketService {
     this.socket.off(event, callback);
   }
 
-  async reconnect() {
-    if (this.isReconnecting) return;
+    async reconnect() {
+        if (this.isReconnecting) return;
 
-    this.isReconnecting = true;
-    this.cleanup(CLEANUP_REASONS.RECONNECT);
+        this.isReconnecting = true;
+        this.cleanup(CLEANUP_REASONS.RECONNECT);
 
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+        }
+
+        try {
+            await this.connect();
+        } catch (e) {
+            this.isReconnecting = false;
+        }
     }
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, this.retryDelay));
-      await this.connect();
-    } catch (error) {
-      this.isReconnecting = false;
-      throw error;
-    }
-  }
 
   isConnected() {
     return this.connected && this.socket?.connected;

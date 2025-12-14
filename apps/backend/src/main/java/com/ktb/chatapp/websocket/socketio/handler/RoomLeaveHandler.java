@@ -1,26 +1,18 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.corundumstudio.socketio.SocketIOClient;
-import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
-import com.ktb.chatapp.dto.MessageResponse;
-import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
-import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
-import com.ktb.chatapp.repository.RoomRepository;
-import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.websocket.socketio.RoomUserCache;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
 import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -38,64 +30,51 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class RoomLeaveHandler {
 
-    private final SocketIOServer socketIOServer;
     private final MessageRepository messageRepository;
-    private final RoomRepository roomRepository;
-    private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final MessageResponseMapper messageResponseMapper;
     private final BroadcastService broadcastService;
-    
+    private final RoomUserCache roomUserCache;
+
     @OnEvent(LEAVE_ROOM)
     public void handleLeaveRoom(SocketIOClient client, String roomId) {
         try {
-            String userId = getUserId(client);
-            String userName = getUserName(client);
-
-            if (userId == null) {
+            SocketUser socketUser = client.get("user");
+            if (socketUser == null) {
                 client.sendEvent(ERROR, Map.of("message", "Unauthorized"));
                 return;
             }
 
+            String userId = socketUser.id();
+            String userName = socketUser.name();
+
             if (!userRooms.isInRoom(userId, roomId)) {
-                log.debug("User {} is not in room {}", userId, roomId);
                 return;
             }
 
-            User user = userRepository.findById(userId).orElse(null);
-            Room room = roomRepository.findById(roomId).orElse(null);
-            
-            if (user == null || room == null) {
-                log.warn("Room {} not found or user {} has no access", roomId, userId);
-                return;
-            }
-            
-            roomRepository.removeParticipant(roomId, userId);
-            
-            client.leaveRoom(roomId);
+            // 1️⃣ 메모리 상태 정리
             userRooms.remove(userId, roomId);
-            
-            log.info("User {} left room {}", userName, room.getName());
-            
-            log.debug("Leave room cleanup - roomId: {}, userId: {}", roomId, userId);
-            
-            sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
-            broadcastParticipantList(roomId);
+            roomUserCache.removeUser(roomId, userId);
+            client.leaveRoom(roomId);
 
-            // Redis Pub/Sub를 통해 모든 서버에 USER_LEFT 브로드캐스트
+            log.info("[LEAVE] userId={} roomId={}", userId, roomId);
+
+            // 2️⃣ system message (선택)
+            sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
+
+            // 3️⃣ diff 이벤트만 브로드캐스트
             broadcastService.broadcastToRoom(
                     ChatBroadcastEvent.TYPE_USER_LEFT,
                     roomId,
                     USER_LEFT,
-                    Map.of("userId", userId, "userName", userName)
+                    Map.of("userId", userId)
             );
-            
+
         } catch (Exception e) {
             log.error("Error handling leaveRoom", e);
-            client.sendEvent(ERROR, Map.of("message", "채팅방 퇴장 중 오류가 발생했습니다."));
+            client.sendEvent(ERROR, Map.of("message", "채팅방 퇴장 중 오류"));
         }
     }
-    
+
     private void sendSystemMessage(String roomId, String content) {
         try {
             Message systemMessage = new Message();
@@ -103,67 +82,21 @@ public class RoomLeaveHandler {
             systemMessage.setContent(content);
             systemMessage.setType(MessageType.system);
             systemMessage.setTimestamp(LocalDateTime.now());
-            systemMessage.setMentions(new ArrayList<>());
-            systemMessage.setIsDeleted(false);
-            systemMessage.setReactions(new HashMap<>());
-            systemMessage.setReaders(new ArrayList<>());
-            systemMessage.setMetadata(new HashMap<>());
 
-            Message savedMessage = messageRepository.save(systemMessage);
-            MessageResponse response = messageResponseMapper.mapToMessageResponse(savedMessage, null);
+            Message saved = messageRepository.save(systemMessage);
 
-            // Redis Pub/Sub를 통해 시스템 메시지 브로드캐스트
             broadcastService.broadcastToRoom(
                     ChatBroadcastEvent.TYPE_SYSTEM_MESSAGE,
                     roomId,
                     MESSAGE,
-                    response
+                    Map.of(
+                            "type", "system",
+                            "content", saved.getContent(),
+                            "timestamp", saved.getTimestamp()
+                    )
             );
-
         } catch (Exception e) {
-            log.error("Error sending system message", e);
+            log.warn("Failed to send system message", e);
         }
-    }
-    
-    private void broadcastParticipantList(String roomId) {
-        Optional<Room> roomOpt = roomRepository.findById(roomId);
-        if (roomOpt.isEmpty()) {
-            return;
-        }
-        
-        var participantList = roomOpt.get()
-                .getParticipantIds()
-                .stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .map(UserResponse::from)
-                .toList();
-        
-        if (participantList.isEmpty()) {
-            return;
-        }
-
-        // Redis Pub/Sub를 통해 참가자 목록 업데이트 브로드캐스트
-        broadcastService.broadcastToRoom(
-                ChatBroadcastEvent.TYPE_PARTICIPANTS_UPDATE,
-                roomId,
-                PARTICIPANTS_UPDATE,
-                participantList
-        );
-    }
-
-    private SocketUser getUserDto(SocketIOClient client) {
-        return client.get("user");
-    }
-
-    private String getUserId(SocketIOClient client) {
-        SocketUser user = getUserDto(client);
-        return user != null ? user.id() : null;
-    }
-
-    private String getUserName(SocketIOClient client) {
-        SocketUser user = getUserDto(client);
-        return user != null ? user.name() : null;
     }
 }

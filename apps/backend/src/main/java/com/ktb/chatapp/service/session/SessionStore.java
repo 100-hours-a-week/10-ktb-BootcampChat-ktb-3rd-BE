@@ -12,10 +12,10 @@ public interface SessionStore {
     /**
      * Find session by user ID
      *
-     * @param userId the user identifier
+     * @param sessionId the user identifier
      * @return Optional containing the Session if found, empty otherwise
      */
-    Optional<Session> findBySessionId(String userId);
+    Optional<Session> findBySessionId(String sessionId);
 
     /**
      * Save or update session

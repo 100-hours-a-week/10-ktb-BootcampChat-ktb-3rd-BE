@@ -10,6 +10,7 @@ import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.session.CachedHandshake;
 import com.ktb.chatapp.service.session.HandshakeSessionCacheService;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import java.util.Map;
@@ -31,86 +32,157 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 public class AuthTokenListenerImpl implements AuthTokenListener {
 
-    private static final int MAX_CONCURRENT_HANDSHAKES = 100;
+    // ✅ macOS 기준 권장: 100~300
+    private static final int MAX_CONCURRENT_HANDSHAKES = 120;
     private static final Semaphore HANDSHAKE_SEMAPHORE =
             new Semaphore(MAX_CONCURRENT_HANDSHAKES);
 
     private final JwtService jwtService;
     private final SessionService sessionService;
-    private final UserRepository userRepository;
-    private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
     private final HandshakeSessionCacheService handshakeCache;
     private final ObjectMapper objectMapper;
 
+
     @Override
-    public AuthTokenResult getAuthTokenResult(Object _authToken, SocketIOClient client) {
+    public AuthTokenResult getAuthTokenResult(Object authPayload, SocketIOClient client) {
 
-        if (!HANDSHAKE_SEMAPHORE.tryAcquire()) {
-            return new AuthTokenResult(false, Map.of(
-                    "message", "Server busy",
-                    "retryAfterMs", 3000
+        String engineSessionId = client.getSessionId().toString();
+
+        CachedHandshake cached = handshakeCache.getByEngineSession(engineSessionId);
+        if (cached != null) {
+            client.set("user", new SocketUser(
+                    cached.userId(),
+                    cached.username(),
+                    cached.sessionId(),
+                    engineSessionId
             ));
+            return AuthTokenResult.AuthTokenResultSuccess;
         }
 
-        String effectiveUserId;
-        String sessionId;
-
+        SocketAuth auth;
         try {
-            SocketAuth auth;
-            try {
-                auth = objectMapper.convertValue(_authToken, SocketAuth.class);
-            } catch (IllegalArgumentException e) {
-                return new AuthTokenResult(false, Map.of("message", "Invalid auth payload"));
-            }
-
-            String token = auth.token();
-            sessionId = auth.sessionId();
-
-            if (token == null || sessionId == null) {
-                return new AuthTokenResult(false, Map.of("message", "Missing token or sessionId"));
-            }
-
-            String userId;
-            try {
-                userId = jwtService.extractUserId(token);
-            } catch (JwtException e) {
-                return new AuthTokenResult(false, Map.of("message", "Invalid token"));
-            }
-
-            String cachedUserId = handshakeCache.getUserId(sessionId);
-            if (cachedUserId != null) {
-                effectiveUserId = cachedUserId;
-            } else {
-                SessionValidationResult validation =
-                        sessionService.validateSessionForHandshake(userId, sessionId);
-
-                if (!validation.isValid()) {
-                    return new AuthTokenResult(false, Map.of("message", "Invalid session"));
-                }
-
-                handshakeCache.cache(sessionId, userId);
-                effectiveUserId = userId;
-            }
-
-        } finally {
-            HANDSHAKE_SEMAPHORE.release();
+            auth = objectMapper.convertValue(authPayload, SocketAuth.class);
+        } catch (IllegalArgumentException e) {
+            return new AuthTokenResult(false, null);
+        }
+        if (auth == null || auth.token() == null || auth.sessionId() == null) {
+            return new AuthTokenResult(false, null);
         }
 
-        User user = userRepository.findById(effectiveUserId).orElse(null);
-        if (user == null) {
-            return new AuthTokenResult(false, Map.of("message", "User not found"));
+        String userId;
+        try {
+            userId = jwtService.extractUserId(auth.token());
+        } catch (JwtException e) {
+            return new AuthTokenResult(false, null);
         }
 
-        socketIOChatHandlerProvider.getObject().onConnect(
-                client,
-                new SocketUser(
-                        user.getId(),
-                        user.getName(),
-                        sessionId,
-                        client.getSessionId().toString()
-                )
+        if (!sessionService
+                .validateSessionForHandshake(userId, auth.sessionId())
+                .isValid()) {
+            return new AuthTokenResult(false, null);
+        }
+
+        SocketUser socketUser = new SocketUser(
+                userId,
+                null, // name은 JOIN_ROOM에서 채워도 됨
+                auth.sessionId(),
+                engineSessionId
+        );
+
+        client.set("user", socketUser);
+
+        handshakeCache.cacheByEngineSession(
+                engineSessionId,
+                new CachedHandshake(userId, auth.sessionId(), null)
         );
 
         return AuthTokenResult.AuthTokenResultSuccess;
     }
+
+
+//    @Override
+//    public AuthTokenResult getAuthTokenResult(Object authPayload, SocketIOClient client) {
+//
+//        // 1️⃣ handshake rate limit
+//        if (!HANDSHAKE_SEMAPHORE.tryAcquire()) {
+//            return new AuthTokenResult(false, Map.of("message", "server busy"));
+//        }
+//
+//        try {
+//            final String engineSessionId = client.getSessionId().toString();
+//
+//            /* --------------------------------------------
+//             * 2️⃣ EngineSession cache 우선
+//             * -------------------------------------------- */
+//            CachedHandshake cached = handshakeCache.getByEngineSession(engineSessionId);
+//            if (cached != null) {
+//                client.set("user", new SocketUser(
+//                        cached.userId(),
+//                        cached.username(), // null 가능
+//                        cached.sessionId(),
+//                        engineSessionId
+//                ));
+//                return AuthTokenResult.AuthTokenResultSuccess;
+//            }
+//
+//            /* --------------------------------------------
+//             * 3️⃣ auth payload 파싱
+//             * -------------------------------------------- */
+//            SocketAuth auth;
+//            try {
+//                auth = objectMapper.convertValue(authPayload, SocketAuth.class);
+//            } catch (IllegalArgumentException e) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            if (auth == null || auth.token() == null || auth.sessionId() == null) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 4️⃣ JWT → userId
+//             * -------------------------------------------- */
+//            final String userId;
+//            try {
+//                userId = jwtService.extractUserId(auth.token());
+//            } catch (JwtException e) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 5️⃣ 세션 검증 (STALE 허용)
+//             * -------------------------------------------- */
+//            SessionValidationResult validation =
+//                    sessionService.validateSessionForHandshake(userId, auth.sessionId());
+//
+//            if (!validation.isValid()) {
+//                return new AuthTokenResult(false, null);
+//            }
+//
+//            /* --------------------------------------------
+//             * 6️⃣ SocketUser (name 없음 → JOIN에서 채움)
+//             * -------------------------------------------- */
+//            SocketUser socketUser = new SocketUser(
+//                    userId,
+//                    null,
+//                    auth.sessionId(),
+//                    engineSessionId
+//            );
+//            client.set("user", socketUser);
+//
+//            /* --------------------------------------------
+//             * 7️⃣ handshake cache
+//             * -------------------------------------------- */
+//            handshakeCache.cacheByEngineSession(
+//                    engineSessionId,
+//                    new CachedHandshake(userId, auth.sessionId(), null)
+//            );
+//
+//            return AuthTokenResult.AuthTokenResultSuccess;
+//
+//        } finally {
+//            // ✅ acquire 성공한 경우에만 release
+//            HANDSHAKE_SEMAPHORE.release();
+//        }
+//    }
 }

@@ -80,11 +80,7 @@ public class SessionService {
                 return SessionValidationResult.invalid("INVALID_PARAMETERS", "유효하지 않은 세션 파라미터");
             }
 
-            log.debug("validateSession latency test start");
-            long t1 = System.currentTimeMillis();
             Session session = sessionStore.findBySessionId(sessionId).orElse(null);
-//            Session session = sessionStore.findByUserId(userId).orElse(null);
-            log.debug("validateSession findByUserId: {}ms", System.currentTimeMillis() - t1);
 
             if (session == null) {
                 log.warn("No session found for userId: {}", userId);
@@ -129,30 +125,59 @@ public class SessionService {
     public SessionValidationResult validateSessionForHandshake(String userId, String sessionId) {
         try {
             if (userId == null || sessionId == null) {
-                return SessionValidationResult.invalid("INVALID_PARAMETERS", "유효하지 않은 세션 파라미터");
+                return SessionValidationResult.invalid(
+                        "INVALID_PARAMETERS",
+                        "유효하지 않은 세션 파라미터"
+                );
             }
 
             Session session = sessionStore.findBySessionId(sessionId).orElse(null);
 
             if (session == null) {
-                return SessionValidationResult.invalid("INVALID_SESSION", "세션을 찾을 수 없습니다.");
+                return SessionValidationResult.invalid(
+                        "INVALID_SESSION",
+                        "세션을 찾을 수 없습니다."
+                );
             }
 
-            if (!sessionId.equals(session.getSessionId())) {
-                return SessionValidationResult.invalid("INVALID_SESSION", "잘못된 세션 ID입니다.");
+            if (!session.getUserId().equals(userId)) {
+                return SessionValidationResult.invalid(
+                        "INVALID_SESSION",
+                        "세션 소유자가 일치하지 않습니다."
+                );
             }
 
             long now = Instant.now().toEpochMilli();
             long diff = now - session.getLastActivity();
 
+            /*
+             * 🚨 핵심 변경점
+             * handshake에서는 절대 removeSession 하지 않는다
+             */
             if (diff > SESSION_TIMEOUT + HANDSHAKE_GRACE_MS) {
-                removeSession(userId, sessionId);
-                return SessionValidationResult.invalid("SESSION_EXPIRED", "세션 만료");
+                log.warn(
+                        "[HANDSHAKE][STALE] allow expired session userId={}, sessionId={}, diff={}ms",
+                        userId, sessionId, diff
+                );
+
+                // ❗ 삭제 ❌
+                // removeSession(userId, sessionId);
+
+                // ✅ STALE 허용
+                return SessionValidationResult.valid(toSessionData(session));
             }
+
             return SessionValidationResult.valid(toSessionData(session));
+
         } catch (Exception e) {
-            log.error("Handshake session validation error: userId={}, sessionId={}", userId, sessionId, e);
-            return SessionValidationResult.invalid("VALIDATION_ERROR", "세션 검증 중 오류");
+            log.error(
+                    "Handshake session validation error: userId={}, sessionId={}",
+                    userId, sessionId, e
+            );
+            return SessionValidationResult.invalid(
+                    "VALIDATION_ERROR",
+                    "세션 검증 중 오류"
+            );
         }
     }
 
@@ -197,9 +222,9 @@ public class SessionService {
         removeSession(userId, null);
     }
 
-    SessionData getActiveSession(String userId) {
+    SessionData getActiveSession(String sessionId) {
         try {
-            Session session = sessionStore.findBySessionId(userId).orElse(null);
+            Session session = sessionStore.findBySessionId(sessionId).orElse(null);
 
             if (session == null) {
                 return null;
@@ -207,7 +232,7 @@ public class SessionService {
 
             return toSessionData(session);
         } catch (Exception e) {
-            log.error("Get active session error for userId: {}", userId, e);
+            log.error("Get active session error for userId: {}", sessionId, e);
             return null;
         }
     }

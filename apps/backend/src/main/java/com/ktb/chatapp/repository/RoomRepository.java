@@ -34,4 +34,17 @@ public interface RoomRepository extends MongoRepository<Room, String> {
     @Query("{'_id': ?0}")
     @Update("{'$pull': {'participantIds': ?1}}")
     void removeParticipant(String roomId, String userId);
+
+    // 🔥 참가자 수 카운트
+    @Query(
+            value = "{ '_id': ?0 }",
+            fields = "{ 'participantIds': 1 }"
+    )
+    Optional<Room> findParticipantsOnly(String roomId);
+
+    default int countParticipants(String roomId) {
+        return findParticipantsOnly(roomId)
+                .map(r -> r.getParticipantIds().size())
+                .orElse(0);
+    }
 }

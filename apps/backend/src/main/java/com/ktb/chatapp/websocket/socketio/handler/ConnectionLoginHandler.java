@@ -2,10 +2,9 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
+import com.corundumstudio.socketio.annotation.OnConnect;
 import com.corundumstudio.socketio.annotation.OnDisconnect;
-import com.ktb.chatapp.websocket.socketio.ConnectedUsers;
-import com.ktb.chatapp.websocket.socketio.SocketUser;
-import com.ktb.chatapp.websocket.socketio.UserRooms;
+import com.ktb.chatapp.websocket.socketio.*;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -34,7 +33,8 @@ public class ConnectionLoginHandler {
     private final RoomJoinHandler roomJoinHandler;
     private final RoomLeaveHandler roomLeaveHandler;
     private final TaskScheduler taskScheduler;
-
+    private final RedisChatDataStore redisChatDataStore;
+    private final java.util.concurrent.Executor socketAuthExecutor;
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
             ConnectedUsers connectedUsers,
@@ -42,7 +42,10 @@ public class ConnectionLoginHandler {
             RoomJoinHandler roomJoinHandler,
             RoomLeaveHandler roomLeaveHandler,
             MeterRegistry meterRegistry,
-            TaskScheduler taskScheduler
+            TaskScheduler taskScheduler,
+            RedisChatDataStore chatDataStore,
+            java.util.concurrent.Executor socketAuthExecutor
+
     ) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
@@ -50,41 +53,51 @@ public class ConnectionLoginHandler {
         this.roomJoinHandler = roomJoinHandler;
         this.roomLeaveHandler = roomLeaveHandler;
         this.taskScheduler = taskScheduler;
+        this.redisChatDataStore = chatDataStore;
+        this.socketAuthExecutor = socketAuthExecutor;
+
 
         // Register gauge metric for concurrent users
-        Gauge.builder("socketio.concurrent.users", connectedUsers::size)
+        Gauge.builder("socketio.concurrent.users", () -> chatDataStore.connectedCount())
                 .description("Current number of concurrent Socket.IO users")
                 .register(meterRegistry);
     }
+
     
     /**
      * auth 처리가 선행되어야 해서 @OnConnect 대신 별도 메서드로 구현
      */
-    public void onConnect(SocketIOClient client, SocketUser user) {
-        String userId = user.id();
-        
-        try {
-//            notifyDuplicateLogin(client, userId);
-            client.set("user", user);
-            
-            userRooms.get(userId).forEach(roomId -> {
-                // 재접속 시 기존 참여 방 재입장 처리
-                roomJoinHandler.handleJoinRoom(client, roomId);
-            });
-            
-            connectedUsers.set(userId, user);
+    @OnConnect
+    public void onConnect(SocketIOClient client) {
 
-            log.debug("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
-                    getUserName(client), userId, connectedUsers.size());
 
-            client.joinRooms(Set.of("user:" + userId, "room-list"));
-            
-        } catch (Exception e) {
-            log.error("Error handling Socket.IO connection", e);
-            client.sendEvent(ERROR, Map.of(
-                    "message", "연결 처리 중 오류가 발생했습니다."
-            ));
+        SocketUser socketUser = client.get("user");
+
+        if (socketUser == null) {
+            log.warn("Connect without auth, disconnect");
+            client.disconnect();
+            return;
         }
+
+        String userId = socketUser.id();
+        String socketId = client.getSessionId().toString();
+        SocketUser existing = connectedUsers.get(userId);
+        if (existing != null) {
+            notifyDuplicateLogin(client, userId);
+        }
+        // 중복 로그인 처리
+//        notifyDuplicateLogin(client, userId);
+
+        connectedUsers.set(userId, new SocketUser(
+                userId,
+                socketUser.name(),
+                socketUser.authSessionId(),
+                socketId
+        ));
+
+        redisChatDataStore.incrementConnected();
+
+        log.info("[CONNECT] userId={} socketId={}", userId, socketId);
     }
     
     @OnDisconnect
@@ -106,16 +119,15 @@ public class ConnectionLoginHandler {
             var socketUser = connectedUsers.get(userId);
             if (socketUser != null && socketId.equals(socketUser.socketId())) {
                 connectedUsers.del(userId);
+                redisChatDataStore.decrementConnected();
             } else {
                 log.warn("Socket.IO disconnect: User {} has a different active connection. Skipping cleanup.", userId);
             }
 
             client.leaveRooms(Set.of("user:" + userId, "room-list"));
             client.del("user");
-            client.disconnect();
+//            client.disconnect();
             
-            log.debug("Socket.IO user disconnected: {} ({}) - Total concurrent users: {}",
-                    userName, userId, connectedUsers.size());
         } catch (Exception e) {
             log.error("Error handling Socket.IO disconnection", e);
             client.sendEvent(ERROR, Map.of(
@@ -144,8 +156,15 @@ public class ConnectionLoginHandler {
         if (socketUser == null) return;
 
         String existingSocketId = socketUser.socketId();
-        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
+        SocketIOClient existingClient = null;
+        try {
+            existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
+        } catch (IllegalArgumentException e) {
+            log.warn("existingSocketId is not UUID: {}", existingSocketId);
+            return;
+        }
         if (existingClient == null) return;
+        final SocketIOClient targetClient = existingClient;
 
         String deviceInfo = client.getHandshakeData().getHttpHeaders().get("User-Agent");
         if (deviceInfo == null) deviceInfo = "unknown";
@@ -164,7 +183,7 @@ public class ConnectionLoginHandler {
             endPayload.put("message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.");
 
             try {
-                existingClient.sendEvent(SESSION_ENDED, endPayload);
+                targetClient.sendEvent(SESSION_ENDED, endPayload);
             } catch (Exception e) {
                 log.error("Error sending session ended", e);
             }
