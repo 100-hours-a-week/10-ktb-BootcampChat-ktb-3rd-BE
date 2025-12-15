@@ -12,7 +12,23 @@ public class SessionValidationResult {
     private String error;
     private String message;
     private SessionData session;
-    
+
+    private SessionValidationResult(
+            boolean isValid,
+            String error,
+            String message,
+            SessionData session
+            ) {
+        this.isValid = isValid;
+        this.error = error;
+        this.message = message;
+        this.session = session;
+    }
+
+    public static SessionValidationResult valid() {
+        return new SessionValidationResult(true, null, null, null);
+    }
+
     public static SessionValidationResult valid(SessionData session) {
         SessionValidationResult result = new SessionValidationResult();
         result.isValid = true;

@@ -13,6 +13,8 @@ import java.util.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.TaskScheduler;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Cache;
 import org.springframework.stereotype.Component;
 
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
@@ -35,6 +37,11 @@ public class ConnectionLoginHandler {
     private final TaskScheduler taskScheduler;
     private final RedisChatDataStore redisChatDataStore;
     private final java.util.concurrent.Executor socketAuthExecutor;
+    private final Cache<String, Boolean> handshakeCache = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofSeconds(180)) // 3분 유지
+            .maximumSize(10_000)
+            .build();
+    
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
             ConnectedUsers connectedUsers,

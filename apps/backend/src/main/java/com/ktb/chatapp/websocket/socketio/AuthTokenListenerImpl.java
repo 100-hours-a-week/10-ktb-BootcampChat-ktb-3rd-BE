@@ -46,8 +46,9 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
     @Override
     public AuthTokenResult getAuthTokenResult(Object authPayload, SocketIOClient client) {
 
-        String engineSessionId = client.getSessionId().toString();
+        final String engineSessionId = client.getSessionId().toString();
 
+        // 1️⃣ 엔진 세션 캐시 (최우선)
         CachedHandshake cached = handshakeCache.getByEngineSession(engineSessionId);
         if (cached != null) {
             client.set("user", new SocketUser(
@@ -59,41 +60,43 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             return AuthTokenResult.AuthTokenResultSuccess;
         }
 
-        SocketAuth auth;
-        try {
-            auth = objectMapper.convertValue(authPayload, SocketAuth.class);
-        } catch (IllegalArgumentException e) {
-            return new AuthTokenResult(false, null);
-        }
-        if (auth == null || auth.token() == null || auth.sessionId() == null) {
+        // 2️⃣ payload 파싱
+        if (!(authPayload instanceof Map<?, ?> raw)) {
             return new AuthTokenResult(false, null);
         }
 
-        String userId;
+        Object tokenObj = raw.get("token");
+        Object sessionIdObj = raw.get("sessionId");
+
+        if (!(tokenObj instanceof String token) || !(sessionIdObj instanceof String sessionId)) {
+            return new AuthTokenResult(false, null);
+        }
+
+        // 3️⃣ JWT → userId
+        final String userId;
         try {
-            userId = jwtService.extractUserId(auth.token());
+            userId = jwtService.extractUserId(token);
         } catch (JwtException e) {
             return new AuthTokenResult(false, null);
         }
 
-        if (!sessionService
-                .validateSessionForHandshake(userId, auth.sessionId())
-                .isValid()) {
+        // 4️⃣ handshake용 세션 검증 (read-only, stale 허용)
+        if (!sessionService.validateSessionForHandshake(userId, sessionId).isValid()) {
             return new AuthTokenResult(false, null);
         }
 
-        SocketUser socketUser = new SocketUser(
+        // 5️⃣ user 세팅
+        client.set("user", new SocketUser(
                 userId,
-                null, // name은 JOIN_ROOM에서 채워도 됨
-                auth.sessionId(),
+                null,
+                sessionId,
                 engineSessionId
-        );
+        ));
 
-        client.set("user", socketUser);
-
+        // 6️⃣ 캐시
         handshakeCache.cacheByEngineSession(
                 engineSessionId,
-                new CachedHandshake(userId, auth.sessionId(), null)
+                new CachedHandshake(userId, sessionId, null)
         );
 
         return AuthTokenResult.AuthTokenResultSuccess;
