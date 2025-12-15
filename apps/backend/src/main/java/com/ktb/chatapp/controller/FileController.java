@@ -57,13 +57,6 @@ public class FileController {
     /**
      * Presigned URL 발급 (S3 직접 업로드용)
      */
-    @CrossOrigin(
-            origins = {
-                    "http://localhost:3000",
-                    "https://chat.goorm-ktb-010.goorm.team"
-            },
-            allowCredentials = "true"
-    )
     @Operation(summary = "Presigned URL 발급", description = "S3 직접 업로드를 위한 Presigned URL을 발급합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Presigned URL 발급 성공",
