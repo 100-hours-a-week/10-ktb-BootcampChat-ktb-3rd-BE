@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -64,26 +65,42 @@ public class SecurityConfig {
         /* ===============================
            1️⃣ AUTH 전용 (JWT 검사 ❌)
            =============================== */
-        @Bean
-        @Order(1)
-        public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
-            http
-                    .securityMatcher(
-                            "/api/auth/**",
-                            "/api/health",
-                            "/api/files/**",
-                            "/api/uploads/**",
-                            "/api/v3/api-docs/**",
-                            "/api/swagger-ui/**",
-                            "/api/swagger-ui.html",
-                            "/api/docs/**"
-                    )
-                    .csrf(AbstractHttpConfigurer::disable)
-                    .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+    @Bean
+    @Order(0)
+    public SecurityFilterChain optionsChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher("/**")
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .anyRequest().denyAll()   // 🔥 핵심
+                );
 
-            return http.build();
-        }
+        return http.build();
+    }
+
+    @Bean
+    @Order(1)
+    public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher(
+                        "/api/auth/**",
+                        "/api/health",
+                        "/api/files/**",
+                        "/api/uploads/**",
+                        "/api/v3/api-docs/**",
+                        "/api/swagger-ui/**",
+                        "/api/swagger-ui.html",
+                        "/api/docs/**",
+                        "/favicon.ico"
+                )
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+
+        return http.build();
+    }
 
     @Bean
     @Order(2)
@@ -92,7 +109,11 @@ public class SecurityConfig {
                 .securityMatcher("/api/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/health").permitAll()
+                        .anyRequest().authenticated()
+                )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
