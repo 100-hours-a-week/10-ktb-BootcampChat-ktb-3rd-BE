@@ -4,12 +4,15 @@ import com.ktb.chatapp.security.CustomBearerTokenResolver;
 import com.ktb.chatapp.security.SessionAwareJwtAuthenticationConverter;
 import java.time.Duration;
 import java.util.List;
+
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -79,8 +82,11 @@ public class SecurityConfig {
                             "/api/docs/**"
                     )
                     .csrf(AbstractHttpConfigurer::disable)
-                    .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+                    .cors(cors -> cors.configurationSource(this::cors))
+                    .authorizeHttpRequests(auth -> auth
+                            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                            .anyRequest().permitAll()
+                    );
 
             return http.build();
         }
@@ -91,8 +97,12 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**")
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .cors(cors -> cors.configurationSource(this::cors))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/health").permitAll()
+                        .anyRequest().authenticated()
+                )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
@@ -105,6 +115,17 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    private CorsConfiguration cors(HttpServletRequest request) {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("x-auth-token","x-session-id"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+        return config;
     }
 
 //    @Bean
