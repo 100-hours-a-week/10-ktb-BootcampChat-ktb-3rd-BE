@@ -68,6 +68,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/api/**").permitAll()
                         .requestMatchers(
                                 "/api/health",
                                 "/api/auth/**",
@@ -75,7 +76,9 @@ public class SecurityConfig {
                                 "/api/swagger-ui/**",
                                 "/api/swagger-ui.html",
                                 "/api/docs/**",
-                                // "/api/files/upload",
+                                "/api/files/**",
+                                 "/api/files/upload",
+                                "/api/uploads",
                                 "/api/uploads/**"
                         ).permitAll()
                         .requestMatchers("/api/**").authenticated()
@@ -99,10 +102,11 @@ public class SecurityConfig {
 
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "https://chat.goorm-ktb-010.goorm.team"
-        ));
-        config.setAllowedOriginPatterns(CORS_ALLOWED_ORIGINS);
+//        config.setAllowedOrigins(List.of(
+//                "http://localhost:3000",
+//                "https://chat.goorm-ktb-010.goorm.team"
+//        ));
+        config.setAllowedOriginPatterns(List.of("*"));
         config.setAllowedMethods(CORS_ALLOWED_METHODS);
         config.setAllowedHeaders(CORS_ALLOWED_HEADERS);
         config.setExposedHeaders(CORS_EXPOSED_HEADERS);
