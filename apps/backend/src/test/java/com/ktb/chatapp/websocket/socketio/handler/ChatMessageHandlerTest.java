@@ -13,6 +13,8 @@ import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.service.RateLimitService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.cache.RoomCacheService;
+import com.ktb.chatapp.service.cache.UserCacheService;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
@@ -47,6 +49,8 @@ class ChatMessageHandlerTest {
     @Mock private BannedWordChecker bannedWordChecker;
     @Mock private RateLimitService rateLimitService;
     @Mock private BroadcastService broadcastService;
+    @Mock private UserCacheService userCacheService;
+    @Mock private RoomCacheService roomCacheService;
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private ChatMessageHandler handler;
@@ -65,7 +69,9 @@ class ChatMessageHandlerTest {
                         bannedWordChecker,
                         rateLimitService,
                         meterRegistry,
-                        broadcastService);
+                        broadcastService,
+                        userCacheService,
+                        roomCacheService);
     }
 
     @Test
@@ -84,12 +90,12 @@ class ChatMessageHandlerTest {
 
         User user = new User();
         user.setId("user-1");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userCacheService.findById("user-1")).thenReturn(Optional.of(user));
 
         Room room = new Room();
         room.setId("room-1");
         room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomCacheService.findById("room-1")).thenReturn(Optional.of(room));
 
         ChatMessageRequest request =
                 ChatMessageRequest.builder()

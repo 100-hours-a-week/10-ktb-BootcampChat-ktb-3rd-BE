@@ -12,6 +12,7 @@ import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.cache.RoomCacheService;
 import com.ktb.chatapp.service.command.MessageReadCommandService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
@@ -42,6 +43,8 @@ public class MessageReadHandler {
     private final UserRepository userRepository;
     private final BroadcastService broadcastService;
     private final MessageReadCommandService messageReadCommandService;
+    // 캐시 서비스 (MongoDB 호출 최소화)
+    private final RoomCacheService roomCacheService;
 
     @Value("${loadtest.enabled:false}")
     private boolean loadTestMode;
@@ -64,10 +67,8 @@ public class MessageReadHandler {
                 data.getMessageIds()
         );
 
-        // 2️⃣ 🔥 참가자 수 확인
-        int participantCount = roomRepository.findById(roomId)
-                .map(r -> r.getParticipantIds().size())
-                .orElse(0);
+        // 2️⃣ 🔥 참가자 수 확인 (캐시 사용으로 MongoDB 조회 최소화)
+        int participantCount = roomCacheService.countParticipants(roomId);
 
         // 3️⃣ 🔥 2인 채팅이면 즉시 "모두 읽음" 브로드캐스트
         if (participantCount == 2) {

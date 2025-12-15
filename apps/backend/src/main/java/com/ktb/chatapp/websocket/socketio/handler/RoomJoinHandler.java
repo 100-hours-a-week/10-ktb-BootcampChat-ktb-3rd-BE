@@ -14,6 +14,8 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.cache.RoomCacheService;
+import com.ktb.chatapp.service.cache.UserCacheService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
@@ -50,6 +52,9 @@ public class RoomJoinHandler {
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
     private final BroadcastService broadcastService;
+    // 캐시 서비스 (MongoDB 호출 최소화)
+    private final RoomCacheService roomCacheService;
+    private final UserCacheService userCacheService;
 
     @Value("${loadtest.enabled:false}")
     private boolean loadTestMode;
@@ -66,7 +71,26 @@ public class RoomJoinHandler {
 
             String userId = socketUser.id();
 
-            Room room = roomRepository.findById(roomId).orElse(null);
+            // 🔥 name이 null이면 캐시에서 사용자 정보 조회하여 업데이트
+            String userName = socketUser.name();
+            if (userName == null) {
+                User user = userCacheService.findById(userId).orElse(null);
+                if (user != null) {
+                    userName = user.getName();
+                    // SocketUser 업데이트
+                    SocketUser updatedUser = new SocketUser(
+                            userId,
+                            userName,
+                            socketUser.authSessionId(),
+                            socketUser.socketId()
+                    );
+                    client.set("user", updatedUser);
+                    socketUser = updatedUser;
+                }
+            }
+
+            // 🔥 캐시 서비스 사용 (MongoDB 직접 조회 → Redis 캐시 조회)
+            Room room = roomCacheService.findById(roomId).orElse(null);
             if (room == null) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
@@ -75,7 +99,8 @@ public class RoomJoinHandler {
             boolean firstJoin = !userRooms.isInRoom(userId, roomId);
 
             if (firstJoin) {
-                roomRepository.addParticipant(roomId, userId);
+                // 🔥 캐시 서비스 사용 (캐시 무효화 포함)
+                roomCacheService.addParticipant(roomId, userId);
                 userRooms.add(userId, roomId);
             }
 

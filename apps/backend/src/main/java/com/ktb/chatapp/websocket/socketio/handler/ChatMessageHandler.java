@@ -13,6 +13,8 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.cache.RoomCacheService;
+import com.ktb.chatapp.service.cache.UserCacheService;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
 import com.ktb.chatapp.service.SessionService;
@@ -51,6 +53,9 @@ public class ChatMessageHandler {
     private final RateLimitService rateLimitService;
     private final MeterRegistry meterRegistry;
     private final BroadcastService broadcastService;
+    // 캐시 서비스 (MongoDB 호출 최소화)
+    private final UserCacheService userCacheService;
+    private final RoomCacheService roomCacheService;
 
     @OnEvent(CHAT_MESSAGE)
     public void handleChatMessage(SocketIOClient client, ChatMessageRequest data) {
@@ -111,7 +116,8 @@ public class ChatMessageHandler {
         }
 
         try {
-            User sender = userRepository.findById(socketUser.id()).orElse(null);
+            // 🔥 캐시 서비스 사용 (MongoDB 직접 조회 → Redis 캐시 조회)
+            User sender = userCacheService.findById(socketUser.id()).orElse(null);
             if (sender == null) {
                 recordError("user_not_found");
                 client.sendEvent(ERROR, Map.of(
@@ -123,7 +129,8 @@ public class ChatMessageHandler {
             }
 
             String roomId = data.getRoom();
-            Room room = roomRepository.findById(roomId).orElse(null);
+            // 🔥 캐시 서비스 사용 (MongoDB 직접 조회 → Redis 캐시 조회)
+            Room room = roomCacheService.findById(roomId).orElse(null);
             if (room == null || !room.getParticipantIds().contains(socketUser.id())) {
                 recordError("room_access_denied");
                 client.sendEvent(ERROR, Map.of(

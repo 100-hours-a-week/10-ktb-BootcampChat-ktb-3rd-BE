@@ -6,6 +6,7 @@ import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.repository.RoomRepository;
+import com.ktb.chatapp.service.cache.RoomCacheService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,8 @@ public class MessageFetchHandler {
 
     private final RoomRepository roomRepository;
     private final MessageLoader messageLoader;
+    // 캐시 서비스 (MongoDB 호출 최소화)
+    private final RoomCacheService roomCacheService;
 
     @OnEvent(FETCH_PREVIOUS_MESSAGES)
     public void handleFetchMessages(SocketIOClient client, FetchMessagesRequest data) {
@@ -41,8 +44,8 @@ public class MessageFetchHandler {
         }
         
         try {
-            // 권한 체크
-            Room room = roomRepository.findById(data.roomId()).orElse(null);
+            // 🔥 캐시 서비스 사용으로 권한 체크 (MongoDB 직접 조회 → Redis 캐시 조회)
+            Room room = roomCacheService.findById(data.roomId()).orElse(null);
             if (room == null || !room.getParticipantIds().contains(userId)) {
                 client.sendEvent(ERROR, Map.of(
                         "code", "LOAD_ERROR",

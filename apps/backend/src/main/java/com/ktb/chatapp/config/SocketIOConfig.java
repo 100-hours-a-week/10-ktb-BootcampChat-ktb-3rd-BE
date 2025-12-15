@@ -6,7 +6,8 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.Transport;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
-import com.corundumstudio.socketio.store.MemoryStoreFactory;
+import com.corundumstudio.socketio.store.RedissonStoreFactory;
+import com.corundumstudio.socketio.store.StoreFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.service.session.HandshakeSessionCacheService;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
@@ -14,6 +15,7 @@ import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,6 +29,7 @@ import org.springframework.context.annotation.Configuration;
 public class SocketIOConfig {
     private final HandshakeSessionCacheService handshakeCache;
     private final ObjectProvider<ConnectionLoginHandler> connectionLoginHandlerProvider;
+    private final RedissonClient redissonClient;
 
     @Value("${socketio.server.host:localhost}")
     private String host;
@@ -34,8 +37,28 @@ public class SocketIOConfig {
     @Value("${socketio.server.port:5002}")
     private Integer port;
 
+    @Value("${socketio.store.type:redis}")
+    private String storeType;
+
+    /**
+     * Socket.IO 세션 스토어 팩토리.
+     *
+     * redis: RedissonStoreFactory - 멀티 서버 환경에서 세션 공유
+     * local: MemoryStoreFactory - 단일 서버 환경 (개발용)
+     */
+    @Bean
+    public StoreFactory socketIOStoreFactory() {
+        if ("local".equalsIgnoreCase(storeType)) {
+            log.warn("Using MemoryStoreFactory - NOT suitable for multi-server environment");
+            return new com.corundumstudio.socketio.store.MemoryStoreFactory();
+        }
+
+        log.info("Using RedissonStoreFactory for multi-server session sharing");
+        return new RedissonStoreFactory(redissonClient);
+    }
+
     @Bean(destroyMethod = "stop")
-    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener) {
+    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener, StoreFactory storeFactory) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         int cores = Runtime.getRuntime().availableProcessors();
 
@@ -69,7 +92,7 @@ public class SocketIOConfig {
         config.setSocketConfig(socketConfig);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
-        config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
+        config.setStoreFactory(storeFactory); // Redis 기반 멀티서버 세션 공유
 
         // ✅ 서버는 여기서 단 한 번만 생성
         SocketIOServer server = new SocketIOServer(config);

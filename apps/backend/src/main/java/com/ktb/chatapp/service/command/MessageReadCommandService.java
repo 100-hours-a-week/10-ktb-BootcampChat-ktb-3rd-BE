@@ -2,8 +2,8 @@ package com.ktb.chatapp.service.command;
 
 import com.ktb.chatapp.model.ReadBatch;
 import com.ktb.chatapp.repository.MessageRepository;
-import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.cache.RoomCacheService;
 import com.ktb.chatapp.websocket.socketio.broadcast.BroadcastService;
 import com.ktb.chatapp.websocket.socketio.pubsub.ChatBroadcastEvent;
 import com.ktb.chatapp.dto.MessagesReadResponse;
@@ -30,7 +30,7 @@ public class MessageReadCommandService {
     private final MessageReadStatusService messageReadStatusService;
     private final BroadcastService broadcastService;
     private final MessageRepository messageRepository;
-    private final RoomRepository roomRepository;
+    private final RoomCacheService roomCacheService;
 
     // roomId:userId → batch
     private final ConcurrentMap<String, ReadBatch> buffer = new ConcurrentHashMap<>();
@@ -97,9 +97,9 @@ public class MessageReadCommandService {
                 batch.getUserId()
         );
 
-        // 2️⃣ 🔥 all-read 판정 (여기가 빠져 있었음)
+        // 2️⃣ 🔥 all-read 판정 (캐시 적용)
         int participantsToRead =
-                roomRepository.countParticipants(batch.getRoomId()) - 1;
+                roomCacheService.countParticipants(batch.getRoomId()) - 1;
 
         List<String> allReadMessageIds =
                 messageRepository.findAllReadMessages(
