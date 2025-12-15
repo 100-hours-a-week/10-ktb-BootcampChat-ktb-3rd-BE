@@ -83,7 +83,7 @@ public class SecurityConfig {
                             "/api/docs/**"
                     )
                     .csrf(AbstractHttpConfigurer::disable)
-                    .cors(cors -> cors.configurationSource(this::cors))
+                    .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
                     .authorizeHttpRequests(auth -> auth
                             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                             .anyRequest().permitAll()
@@ -98,7 +98,7 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**")
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(this::cors))
+                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
@@ -118,16 +118,31 @@ public class SecurityConfig {
         return http.build();
     }
 
-    private CorsConfiguration cors(HttpServletRequest request) {
+    private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setExposedHeaders(List.of("x-auth-token","x-session-id"));
+        config.setAllowedOrigins(List.of(
+                "http://localhost:3000",
+                "https://chat.goorm-ktb-010.goorm.team"
+        ));
+//        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(CORS_ALLOWED_METHODS);
+        config.setAllowedHeaders(CORS_ALLOWED_HEADERS);
+        config.setExposedHeaders(CORS_EXPOSED_HEADERS);
         config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
+        config.setMaxAge(Duration.ofHours(1).getSeconds());
         return config;
     }
+
+//    private CorsConfiguration cors(HttpServletRequest request) {
+//        CorsConfiguration config = new CorsConfiguration();
+//        config.setAllowedOriginPatterns(List.of("*"));
+//        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+//        config.setAllowedHeaders(List.of("*"));
+//        config.setExposedHeaders(List.of("x-auth-token","x-session-id"));
+//        config.setAllowCredentials(true);
+//        config.setMaxAge(3600L);
+//        return config;
+//    }
 
 //    @Bean
 //    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -168,18 +183,4 @@ public class SecurityConfig {
 //        return http.build();
 //    }
 
-    private CorsConfiguration createCorsConfiguration() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "http://localhost:3000",
-                "https://chat.goorm-ktb-010.goorm.team"
-        ));
-//        config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(CORS_ALLOWED_METHODS);
-        config.setAllowedHeaders(CORS_ALLOWED_HEADERS);
-        config.setExposedHeaders(CORS_EXPOSED_HEADERS);
-        config.setAllowCredentials(true);
-        config.setMaxAge(Duration.ofHours(1).getSeconds());
-        return config;
-    }
 }
