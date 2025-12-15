@@ -4,6 +4,8 @@ import com.ktb.chatapp.security.CustomBearerTokenResolver;
 import com.ktb.chatapp.security.SessionAwareJwtAuthenticationConverter;
 import java.time.Duration;
 import java.util.List;
+
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,42 +67,29 @@ public class SecurityConfig {
         /* ===============================
            1️⃣ AUTH 전용 (JWT 검사 ❌)
            =============================== */
-    @Bean
-    @Order(0)
-    public SecurityFilterChain optionsChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher("/**")
-                .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .anyRequest().denyAll()   // 🔥 핵심
-                );
+        @Bean
+        @Order(1)
+        public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
+            http
+                    .securityMatcher(
+                            "/api/auth/**",
+                            "/api/health",
+                            "/api/files/**",
+                            "/api/uploads/**",
+                            "/api/v3/api-docs/**",
+                            "/api/swagger-ui/**",
+                            "/api/swagger-ui.html",
+                            "/api/docs/**"
+                    )
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .cors(cors -> cors.configurationSource(this::cors))
+                    .authorizeHttpRequests(auth -> auth
+                            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                            .anyRequest().permitAll()
+                    );
 
-        return http.build();
-    }
-
-    @Bean
-    @Order(1)
-    public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher(
-                        "/api/auth/**",
-                        "/api/health",
-                        "/api/files/**",
-                        "/api/uploads/**",
-                        "/api/v3/api-docs/**",
-                        "/api/swagger-ui/**",
-                        "/api/swagger-ui.html",
-                        "/api/docs/**",
-                        "/favicon.ico"
-                )
-                .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
-
-        return http.build();
-    }
+            return http.build();
+        }
 
     @Bean
     @Order(2)
@@ -108,7 +97,7 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/**")
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
+                .cors(cors -> cors.configurationSource(this::cors))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
@@ -126,6 +115,17 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    private CorsConfiguration cors(HttpServletRequest request) {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("x-auth-token","x-session-id"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+        return config;
     }
 
 //    @Bean
