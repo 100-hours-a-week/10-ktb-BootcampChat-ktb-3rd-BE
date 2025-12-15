@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -60,35 +61,41 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
+        /* ===============================
+           1️⃣ AUTH 전용 (JWT 검사 ❌)
+           =============================== */
+        @Bean
+        @Order(1)
+        public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
+            http
+                    .securityMatcher(
+                            "/api/auth/**",
+                            "/api/health",
+                            "/api/files/**",
+                            "/api/uploads/**",
+                            "/api/v3/api-docs/**",
+                            "/api/swagger-ui/**",
+                            "/api/swagger-ui.html",
+                            "/api/docs/**"
+                    )
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
+                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+
+            return http.build();
+        }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
+    @Order(2)
+    public SecurityFilterChain apiChain(HttpSecurity http) throws Exception {
         http
+                .securityMatcher("/api/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/api/**").permitAll()
-                        .requestMatchers(
-                                "/api/health",
-                                "/api/auth/**",
-                                "/api/v3/api-docs/**",
-                                "/api/swagger-ui/**",
-                                "/api/swagger-ui.html",
-                                "/api/docs/**",
-                                "/api/files/**",
-                                 "/api/files/upload",
-                                "/api/uploads",
-                                "/api/uploads/**"
-                        ).permitAll()
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll()
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                .securityMatcher("/api/**")
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-                // Spring Security 6 OAuth2 Resource Server 설정
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(bearerTokenResolver)
                         .jwt(jwt -> jwt
@@ -99,6 +106,45 @@ public class SecurityConfig {
 
         return http.build();
     }
+
+//    @Bean
+//    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+//
+//        http
+//                .csrf(AbstractHttpConfigurer::disable)
+//                .cors(cors -> cors.configurationSource(request -> createCorsConfiguration()))
+//                .authorizeHttpRequests(authorize -> authorize
+//                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/api/**").permitAll()
+//                        .requestMatchers(
+//                                "/api/health",
+//                                "/api/auth/**",
+//                                "/api/v3/api-docs/**",
+//                                "/api/swagger-ui/**",
+//                                "/api/swagger-ui.html",
+//                                "/api/docs/**",
+//                                "/api/files/**",
+//                                 "/api/files/upload",
+//                                "/api/uploads",
+//                                "/api/uploads/**"
+//                        ).permitAll()
+//                        .requestMatchers("/api/**").authenticated()
+//                        .anyRequest().permitAll()
+//                )
+//                .securityMatcher("/api/**")
+//                .sessionManagement(session -> session
+//                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+//                )
+//                // Spring Security 6 OAuth2 Resource Server 설정
+//                .oauth2ResourceServer(oauth2 -> oauth2
+//                        .bearerTokenResolver(bearerTokenResolver)
+//                        .jwt(jwt -> jwt
+//                                .decoder(jwtDecoder)
+//                                .jwtAuthenticationConverter(jwtAuthenticationConverter)
+//                        )
+//                );
+//
+//        return http.build();
+//    }
 
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration config = new CorsConfiguration();

@@ -24,7 +24,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -192,6 +194,23 @@ public class AuthController {
                 user.getId()
             );
 
+            ResponseCookie accessTokenCookie = ResponseCookie.from("accessToken", token)
+                    .httpOnly(true)
+                    .secure(true)              // 🔥 서버 필수
+                    .sameSite("None")          // 🔥 cross-origin 필수
+                    .path("/")
+                    .maxAge(60 * 60 * 24)
+                    .build();
+
+            ResponseCookie sessionIdCookie = ResponseCookie.from("sessionId", sessionInfo.getSessionId())
+                    .httpOnly(true)
+                    .secure(true)
+                    .sameSite("None")
+                    .path("/")
+                    .maxAge(60 * 60 * 24)
+                    .build();
+
+
             LoginResponse response = LoginResponse.builder()
                     .success(true)
                     .token(token)
@@ -200,6 +219,8 @@ public class AuthController {
                     .build();
 
             return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE, accessTokenCookie.toString())
+                    .header(HttpHeaders.SET_COOKIE, sessionIdCookie.toString())
                     .header("Authorization", "Bearer " + token)
                     .header("x-session-id", sessionInfo.getSessionId())
                     .body(response);
