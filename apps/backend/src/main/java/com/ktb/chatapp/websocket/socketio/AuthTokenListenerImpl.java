@@ -33,7 +33,7 @@ import org.springframework.stereotype.Component;
 public class AuthTokenListenerImpl implements AuthTokenListener {
 
     // ✅ macOS 기준 권장: 100~300
-    private static final int MAX_CONCURRENT_HANDSHAKES = 120;
+    private static final int MAX_CONCURRENT_HANDSHAKES = 300;
     private static final Semaphore HANDSHAKE_SEMAPHORE =
             new Semaphore(MAX_CONCURRENT_HANDSHAKES);
 

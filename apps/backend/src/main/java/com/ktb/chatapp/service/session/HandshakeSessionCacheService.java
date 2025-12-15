@@ -19,7 +19,7 @@ public class HandshakeSessionCacheService {
     private final ObjectMapper objectMapper;
 
     private static final String PREFIX = "ws:handshake:engine:";
-    private static final Duration TTL = Duration.ofSeconds(60);
+    private static final Duration TTL = Duration.ofSeconds(300);
 
     private final ConcurrentMap<String, CachedHandshake> localCache =
             new ConcurrentHashMap<>();
