@@ -4,10 +4,7 @@ import com.ktb.chatapp.dto.*;
 import com.ktb.chatapp.event.SessionEndedEvent;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
-import com.ktb.chatapp.service.JwtService;
-import com.ktb.chatapp.service.SessionCreationResult;
-import com.ktb.chatapp.service.SessionMetadata;
-import com.ktb.chatapp.service.SessionService;
+import com.ktb.chatapp.service.*;
 import com.mongodb.client.MongoDatabase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -290,23 +287,24 @@ public class AuthController {
         try {
             String token = extractToken(request);
             String sessionId = extractSessionId(request);
-            
+
             if (token == null || sessionId == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                return ResponseEntity.badRequest()
                         .body(new TokenVerifyResponse(false, "토큰 또는 세션 ID가 필요합니다.", null));
             }
 
-            // 토큰 유효성 검증
             if (!jwtService.validateToken(token)) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new TokenVerifyResponse(false, "유효하지 않은 토큰입니다.", null));
             }
 
-            // 토큰에서 사용자 정보 추출
             String userId = jwtService.extractUserId(token);
 
-            // 세션 유효성 검증
-            if (!sessionService.validateSession(userId, sessionId).isValid()) {
+            // ✅ handshake 기준으로 단일 검증
+            SessionValidationResult result =
+                    sessionService.validateSessionForHandshake(userId, sessionId);
+
+            if (!result.isValid()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(new TokenVerifyResponse(false, "만료된 세션입니다.", null));
             }
@@ -319,14 +317,13 @@ public class AuthController {
                     )
             );
 
-
         } catch (Exception e) {
-            log.error("Token verification error: ", e);
+            log.error("Token verification error", e);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new TokenVerifyResponse(false, "토큰 검증 중 오류가 발생했습니다.", null));
         }
     }
-    
+
     @Operation(summary = "토큰 갱신", description = "만료된 토큰을 갱신합니다. 새로운 토큰과 세션 ID가 발급됩니다. 기존 세션은 종료됩니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "토큰 갱신 성공",
@@ -398,24 +395,51 @@ public class AuthController {
 
         return request.getRemoteAddr();
     }
-    
+
     private String extractSessionId(HttpServletRequest request) {
+
+        // ✅ 1. Cookie 우선
+        if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if ("sessionId".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        // 2. 헤더
         String sessionId = request.getHeader("x-session-id");
         if (sessionId != null && !sessionId.isEmpty()) {
             return sessionId;
         }
+
+        // 3. query param (fallback)
         return request.getParameter("sessionId");
     }
-    
+
     private String extractToken(HttpServletRequest request) {
+
+        // ✅ 1. Cookie 우선 (프론트/E2E 핵심)
+        if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if ("accessToken".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        // 2. x-auth-token 헤더
         String token = request.getHeader("x-auth-token");
         if (token != null && !token.isEmpty()) {
             return token;
         }
+
+        // 3. Authorization 헤더
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
+
         return null;
     }
     

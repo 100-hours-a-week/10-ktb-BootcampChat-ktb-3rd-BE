@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -49,8 +50,10 @@ public class SecurityConfig {
     private static final List<String> CORS_ALLOWED_METHODS = List.of("GET", "POST", "PUT", "DELETE", "OPTIONS");
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+    public PasswordEncoder passwordEncoder(
+            @Value("${security.bcrypt.strength:10}") int strength
+    ) {
+        return new BCryptPasswordEncoder(strength);
     }
 
     @Bean
@@ -96,19 +99,9 @@ public class SecurityConfig {
 
     private CorsConfiguration createCorsConfiguration() {
         CorsConfiguration config = new CorsConfiguration();
-//        if (CORS_ALLOWED_ORIGINS.contains("*")) {
-//            log.warn("╔═══════════════════════════════════════════════════════════════════════════════╗");
-//            log.warn("║                           ⚠️  CORS 보안 경고  ⚠️                              ║");
-//            log.warn("╠═══════════════════════════════════════════════════════════════════════════════╣");
-//            log.warn("║  CORS_ALLOWED_ORIGINS에 와일드카드 '*'가 포함되어 있습니다.                 ║");
-//            log.warn("║  ➜ 모든 Origin의 요청을 허용하므로 보안 위험이 있습니다.                    ║");
-//            log.warn("║                                                                               ║");
-//            log.warn("║  🔓 예상하지 못한 도메인에서의 요청도 수용됩니다:                           ║");
-//            log.warn("║     예시) https://a-team-front.com → https://b-team-backend.com             ║");
-//            log.warn("║                                                                               ║");
-//            log.warn("║  💡 팀 도메인으로 CORS 설정하세요.         ║");
-//            log.warn("╚═══════════════════════════════════════════════════════════════════════════════╝");
-//        }
+        config.setAllowedOrigins(List.of(
+                "https://chat.goorm-ktb-010.goorm.team"
+        ));
         config.setAllowedOriginPatterns(CORS_ALLOWED_ORIGINS);
         config.setAllowedMethods(CORS_ALLOWED_METHODS);
         config.setAllowedHeaders(CORS_ALLOWED_HEADERS);
